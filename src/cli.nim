@@ -1,0 +1,274 @@
+## CLI интерфейс для компилятора Wolfram
+
+import os, strutils, strformat, yaml, json
+import ./types, ./errors, ./parser, ./compiler
+
+const
+  Version = "1.0.0"
+  HelpText = """
+Компилятор Wolfram v""" & Version & """
+
+Использование:
+  wfm <команда> [аргументы]
+
+Команды:
+  --version             Показать версию компилятора
+  --help                Показать эту справку
+  --docs                Показать документацию (в разработке)
+  parse <файл>         Парсить файл и показать AST
+  build <конфиг>       Собрать проект по конфигурационному файлу
+  debug <файл>         Проверить файл на ошибки
+  run <файл>           Скомпилировать и запустить файл
+"""
+
+proc loadConfig(filename: string): ProjectConfig =
+  ## Загрузить конфигурацию проекта
+  try:
+    let yamlContent = readFile(filename)
+    let parsed = yaml.parseToJson(yamlContent)
+    
+    if parsed.hasKey("config") and parsed["config"].hasKey("project"):
+      let project = parsed["config"]["project"]
+      result.name = project["name"].getStr()
+      result.version = project["version"].getStr()
+      
+      if project.hasKey("author"):
+        for auth in project["author"]:
+          result.author.add(auth.getStr())
+      
+      if parsed["config"].hasKey("files"):
+        for file in parsed["config"]["files"]:
+          result.files.add(file.getStr())
+    else:
+      echo "Ошибка: Неверный формат конфигурационного файла"
+      quit(1)
+  except IOError:
+    echo &"Ошибка: Не удалось прочитать файл {filename}"
+    quit(1)
+  except YamlParserError:
+    echo &"Ошибка: Неверный YAML формат в файле {filename}"
+    quit(1)
+
+proc parseFile(filename: string) =
+  ## Парсить файл и вывести AST
+  try:
+    let source = readFile(filename)
+    var parser = initParser(source)
+    let ast = parser.parseProgram()
+    
+    if parser.state.hasErrors():
+      parser.state.showErrors()
+      quit(1)
+    
+    echo "AST дерево:"
+    echo "==========="
+    
+    proc printNode(node: Node, depth: int = 0) =
+      let indent = "  ".repeat(depth)
+      case node.kind
+      of nkProgram:
+        echo &"{indent}Program:"
+        for stmt in node.statements:
+          printNode(stmt, depth + 1)
+      
+      of nkVarDecl:
+        echo &"{indent}VarDecl: {node.declName} : {node.declType}"
+        if node.declValue != nil:
+          printNode(node.declValue, depth + 1)
+      
+      of nkConstDecl:
+        echo &"{indent}ConstDecl: {node.declName} : {node.declType}"
+        if node.declValue != nil:
+          printNode(node.declValue, depth + 1)
+      
+      of nkAssignment:
+        echo &"{indent}Assignment: {node.assignName}"
+        if node.assignValue != nil:
+          printNode(node.assignValue, depth + 1)
+      
+      of nkSendln:
+        echo &"{indent}Sendln:"
+        if node.sendlnArg != nil:
+          printNode(node.sendlnArg, depth + 1)
+      
+      of nkRefactor:
+        echo &"{indent}Refactor: -> {node.refactorToType}"
+        if node.refactorTarget != nil:
+          printNode(node.refactorTarget, depth + 1)
+      
+      of nkLiteral:
+        echo &"{indent}Literal[{node.litType}]: {node.litValue}"
+      
+      of nkIdentifier:
+        echo &"{indent}Identifier: {node.identName}"
+      
+      else:
+        echo &"{indent}{node.kind}"
+    
+    printNode(ast)
+    
+  except IOError:
+    echo &"Ошибка: Не удалось прочитать файл {filename}"
+    quit(1)
+
+proc debugFile(filename: string) =
+  ## Проверить файл на ошибки
+  try:
+    let source = readFile(filename)
+    var parser = initParser(source)
+    discard parser.parseProgram()
+    
+    if parser.state.hasErrors():
+      echo "Найдены ошибки:"
+      parser.state.showErrors()
+      quit(1)
+    else:
+      echo "Ошибок не найдено."
+      if parser.state.warnings.len > 0:
+        echo "\nПредупреждения:"
+        for warn in parser.state.warnings:
+          echo &"  {warn}"
+    
+  except IOError:
+    echo &"Ошибка: Не удалось прочитать файл {filename}"
+    quit(1)
+
+proc compileFile(filename: string): string =
+  ## Скомпилировать файл в C код
+  try:
+    let source = readFile(filename)
+    var parser = initParser(source)
+    let ast = parser.parseProgram()
+    
+    if parser.state.hasErrors():
+      parser.state.showErrors()
+      quit(1)
+    
+    var generator = initCodeGenerator()
+    result = generator.generateCode(ast)
+    
+    if generator.state.hasErrors():
+      generator.state.showErrors()
+      quit(1)
+    
+  except IOError:
+    echo &"Ошибка: Не удалось прочитать файл {filename}"
+    quit(1)
+
+proc runFile(filename: string) =
+  ## Скомпилировать и запустить файл
+  let cCode = compileFile(filename)
+  
+  # Сохраняем временный C файл
+  let tempDir = getTempDir()
+  let cFile = tempDir / "wolfram_temp.c"
+  let exeFile = tempDir / "wolfram_temp"
+  
+  writeFile(cFile, cCode)
+  
+  # Компилируем C код
+  echo "Компиляция в C..."
+  let compileCmd = &"gcc -o {exeFile} {cFile} 2>&1"
+  let (compileOutput, exitCode) = gorgeEx(compileCmd)
+  
+  if exitCode != 0:
+    echo "Ошибка компиляции C кода:"
+    echo compileOutput
+    quit(1)
+  
+  # Запускаем исполняемый файл
+  echo "\nЗапуск программы:"
+  echo "================="
+  discard execShellCmd(exeFile)
+  
+  # Удаляем временные файлы
+  removeFile(cFile)
+  removeFile(exeFile)
+
+proc buildProject(configFile: string) =
+  ## Собрать проект по конфигурации
+  let config = loadConfig(configFile)
+  
+  echo &"Сборка проекта: {config.name} v{config.version}"
+  if config.author.len > 0:
+    echo &"Автор(ы): {config.author.join(\", \")}"
+  echo ""
+  
+  for file in config.files:
+    if fileExists(file):
+      echo &"Компиляция {file}..."
+      let cCode = compileFile(file)
+      
+      # Сохраняем скомпилированный C файл
+      let cFile = changeFileExt(file, ".c")
+      writeFile(cFile, cCode)
+      echo &"  -> Сгенерирован: {cFile}"
+      
+      # Компилируем в исполняемый файл
+      let exeFile = changeFileExt(file, "")
+      let compileCmd = &"gcc -o {exeFile} {cFile} 2>&1"
+      let (compileOutput, exitCode) = gorgeEx(compileCmd)
+      
+      if exitCode != 0:
+        echo "  Ошибка компиляции:"
+        echo compileOutput
+      else:
+        echo &"  -> Исполняемый файл: {exeFile}"
+      
+    else:
+      echo &"Ошибка: Файл не найден: {file}"
+
+proc handleCommand*() =
+  ## Обработать команду CLI
+  if paramCount() == 0:
+    echo HelpText
+    return
+  
+  let cmd = paramStr(1)
+  
+  case cmd
+  of "--version":
+    echo &"Wolfram Compiler v{Version}"
+  
+  of "--help":
+    echo HelpText
+  
+  of "--docs":
+    echo "Документация Wolfram (в разработке)"
+    echo "==================================="
+    echo ""
+    echo "Основные конструкции:"
+    echo "  int x = 10;          // Целочисленная переменная"
+    echo "  const str s = \"hi\";  // Константная строка"
+    echo "  x = 20;              // Присваивание"
+    echo "  sendln(\"Hello\");     // Вывод строки"
+    echo "  refactor(x) => str;  // Преобразование типа"
+  
+  of "parse":
+    if paramCount() < 2:
+      echo "Ошибка: Укажите файл для парсинга"
+      quit(1)
+    parseFile(paramStr(2))
+  
+  of "debug":
+    if paramCount() < 2:
+      echo "Ошибка: Укажите файл для проверки"
+      quit(1)
+    debugFile(paramStr(2))
+  
+  of "run":
+    if paramCount() < 2:
+      echo "Ошибка: Укажите файл для запуска"
+      quit(1)
+    runFile(paramStr(2))
+  
+  of "build":
+    if paramCount() < 2:
+      echo "Ошибка: Укажите конфигурационный файл"
+      quit(1)
+    buildProject(paramStr(2))
+  
+  else:
+    echo &"Неизвестная команда: {cmd}"
+    echo HelpText
+    quit(1)
