@@ -1,7 +1,7 @@
 ## CLI интерфейс для компилятора Wolfram
 
-import os, strutils, strformat, yaml, json
-import ./types, ./errors, ./parser, ./compiler
+import os, strutils, strformat
+import ./types, ./errors, ./parser, ./compiler, ./config
 
 const
   Version = "1.0.0"
@@ -21,39 +21,13 @@ const
   run <файл>           Скомпилировать и запустить файл
 """
 
-proc loadConfig(filename: string): ProjectConfig =
-  ## Загрузить конфигурацию проекта
-  try:
-    let yamlContent = readFile(filename)
-    let parsed = yaml.parseToJson(yamlContent)
-    
-    if parsed.hasKey("config") and parsed["config"].hasKey("project"):
-      let project = parsed["config"]["project"]
-      result.name = project["name"].getStr()
-      result.version = project["version"].getStr()
-      
-      if project.hasKey("author"):
-        for auth in project["author"]:
-          result.author.add(auth.getStr())
-      
-      if parsed["config"].hasKey("files"):
-        for file in parsed["config"]["files"]:
-          result.files.add(file.getStr())
-    else:
-      echo "Ошибка: Неверный формат конфигурационного файла"
-      quit(1)
-  except IOError:
-    echo &"Ошибка: Не удалось прочитать файл {filename}"
-    quit(1)
-  except YamlParserError:
-    echo &"Ошибка: Неверный YAML формат в файле {filename}"
-    quit(1)
+# Убрали loadConfig из этого файла, теперь она в config.nim
 
 proc parseFile(filename: string) =
   ## Парсить файл и вывести AST
   try:
     let source = readFile(filename)
-    var parser = initParser(source)
+    var parser = newParser(source)
     let ast = parser.parseProgram()
     
     if parser.state.hasErrors():
@@ -115,7 +89,7 @@ proc debugFile(filename: string) =
   ## Проверить файл на ошибки
   try:
     let source = readFile(filename)
-    var parser = initParser(source)
+    var parser = newParser(source)
     discard parser.parseProgram()
     
     if parser.state.hasErrors():
@@ -137,7 +111,7 @@ proc compileFile(filename: string): string =
   ## Скомпилировать файл в C код
   try:
     let source = readFile(filename)
-    var parser = initParser(source)
+    var parser = newParser(source)
     let ast = parser.parseProgram()
     
     if parser.state.hasErrors():
@@ -162,7 +136,7 @@ proc runFile(filename: string) =
   # Сохраняем временный C файл
   let tempDir = getTempDir()
   let cFile = tempDir / "wolfram_temp.c"
-  let exeFile = tempDir / "wolfram_temp"
+  let exeFile = tempDir / "wolfram_temp.exe"
   
   writeFile(cFile, cCode)
   

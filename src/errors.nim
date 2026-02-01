@@ -12,6 +12,11 @@ type
     line*: int
     column*: int
 
+  # Состояние компилятора для обработки ошибок
+  CompilerState* = object
+    errors*: seq[string]
+    warnings*: seq[string]
+
 proc error*(state: var CompilerState, message: string, line = 0, column = 0) =
   ## Добавить ошибку в состояние компилятора
   let location = if line > 0: &"({line}:{column}) " else: ""

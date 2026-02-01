@@ -16,7 +16,7 @@ type
     tkPlus, tkMinus, tkStar, tkSlash, tkPercent
     tkEq, tkEqEq, tkNotEq, tkLt, tkGt, tkLtEq, tkGtEq
     tkLParen, tkRParen, tkLBrace, tkRBrace
-    tkColon, tkSemi, tkComma, tkArrow, tkFatArrow
+    tkColon, tkColonColon, tkSemi, tkComma, tkArrow, tkFatArrow  # ИЗМЕНЕНО: добавили tkColonColon
     tkLet, tkConst, tkIf, tkElse, tkWhile, tkReturn
     tkSendln, tkRefactor
     tkEOF, tkIllegal
@@ -98,9 +98,3 @@ type
     version*: string
     author*: seq[string]
     files*: seq[string]
-  
-  # Состояние компилятора
-  CompilerState* = object
-    config*: ProjectConfig
-    errors*: seq[string]
-    warnings*: seq[string]

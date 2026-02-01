@@ -38,7 +38,12 @@ proc generateLiteral(g: var CodeGenerator, node: Node): string =
   of wtInt: node.litValue
   of wtFloat: node.litValue
   of wtBool: node.litValue
-  of wtString: &"\"{node.litValue}\""
+  of wtString: 
+    # Простая версия без сложного экранирования
+    var escaped = node.litValue
+    escaped = escaped.replace("\\", "\\\\")
+    escaped = escaped.replace("\"", "\\\"")
+    &"\"{escaped}\""
   else: "NULL"
 
 proc generateExpression(g: var CodeGenerator, node: Node): string =
@@ -66,8 +71,22 @@ proc generateAssignment(g: var CodeGenerator, node: Node) =
 
 proc generateSendln(g: var CodeGenerator, node: Node) =
   let arg = g.generateExpression(node.sendlnArg)
-  # Временная реализация - просто printf
-  g.writeln(&"printf(\"%s\\n\", {arg});")
+  # Простой printf для всех типов
+  case node.sendlnArg.kind
+  of nkLiteral:
+    if node.sendlnArg.litType == wtString:
+      g.writeln(&"printf(\"%s\\n\", {arg});")
+    elif node.sendlnArg.litType == wtInt:
+      g.writeln(&"printf(\"%d\\n\", {arg});")
+    elif node.sendlnArg.litType == wtFloat:
+      g.writeln(&"printf(\"%f\\n\", {arg});")
+    elif node.sendlnArg.litType == wtBool:
+      g.writeln(&"printf(\"%s\\n\", {arg} ? \"true\" : \"false\");")
+    else:
+      g.writeln(&"printf(\"%s\\n\", {arg});")
+  else:
+    # Для переменных определяем тип во время выполнения (упрощенно)
+    g.writeln(&"printf(\"%s\\n\", {arg});")
 
 proc generateRefactor(g: var CodeGenerator, node: Node) =
   let target = g.generateExpression(node.refactorTarget)
@@ -109,6 +128,7 @@ proc generateCode*(g: var CodeGenerator, ast: Node): string =
   g.writeln("// Сгенерировано компилятором Wolfram")
   g.writeln("#include <stdio.h>")
   g.writeln("#include <stdbool.h>")
+  g.writeln("#include <string.h>")
   g.writeln()
   g.writeln("int main() {")
   g.indent()
