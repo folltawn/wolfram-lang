@@ -71,10 +71,12 @@ proc generateAssignment(g: var CodeGenerator, node: Node) =
 
 proc generateSendln(g: var CodeGenerator, node: Node) =
   let arg = g.generateExpression(node.sendlnArg)
-  # Простой printf для всех типов
+  
+  # Простой вывод строк
   case node.sendlnArg.kind
   of nkLiteral:
     if node.sendlnArg.litType == wtString:
+      # TODO: интерполяция строк
       g.writeln(&"printf(\"%s\\n\", {arg});")
     elif node.sendlnArg.litType == wtInt:
       g.writeln(&"printf(\"%d\\n\", {arg});")
@@ -84,20 +86,35 @@ proc generateSendln(g: var CodeGenerator, node: Node) =
       g.writeln(&"printf(\"%s\\n\", {arg} ? \"true\" : \"false\");")
     else:
       g.writeln(&"printf(\"%s\\n\", {arg});")
+  of nkIdentifier:
+    # Для переменных определяем тип во время выполнения
+    g.writeln(&"// TODO: определить тип переменной для printf")
+    g.writeln(&"printf(\"%s\\n\", {arg});")
   else:
-    # Для переменных определяем тип во время выполнения (упрощенно)
     g.writeln(&"printf(\"%s\\n\", {arg});")
 
 proc generateRefactor(g: var CodeGenerator, node: Node) =
   let target = g.generateExpression(node.refactorTarget)
-  let toType = typeToCType(node.refactorToType)
   
-  # Преобразование типов в C
   case node.refactorToType
   of wtString:
-    g.writeln(&"char __refactor_buf[256];")
-    g.writeln(&"sprintf(__refactor_buf, \"%s\", (char*){target});")
-    g.writeln(&"{target} = __refactor_buf;")
+    # Создаем строковую версию переменной
+    let strVar = target & "_str"
+    
+    if node.refactorValue != nil:
+      let value = g.generateExpression(node.refactorValue)
+      g.writeln(&"char* {strVar} = {value};")
+    else:
+      # Преобразуем текущее значение в строку
+      g.writeln(&"char {strVar}_buf[256];")
+      g.writeln(&"sprintf({strVar}_buf, \"%f\", {target});")
+      g.writeln(&"char* {strVar} = {strVar}_buf;")
+    
+    # Вместо изменения оригинала, используем строковую версию
+    # Для sendln будем использовать {strVar} вместо {target}
+    # Пока просто запомним что нужно использовать строковую версию
+    g.writeln(&"// {target} преобразован в строку: {strVar}")
+    
   of wtInt:
     g.writeln(&"{target} = (int){target};")
   of wtFloat:

@@ -20,7 +20,7 @@ type
 
 # Ключевые слова
 const Keywords = {
-  "int": tkLet, "float": tkLet, "bool": tkLet, "str": tkLet,
+  "int": tkTypeInt, "float": tkTypeFloat, "bool": tkTypeBool, "str": tkTypeStr,
   "const": tkConst, "true": tkBool, "false": tkBool,
   "if": tkIf, "else": tkElse, "while": tkWhile,
   "sendln": tkSendln, "refactor": tkRefactor
@@ -109,7 +109,11 @@ proc nextToken*(l: var Lexer): Token =
   
   case l.ch
   of '=':
-    if l.peekChar() == '=':
+    if l.peekChar() == '>':
+      l.readChar()
+      token.kind = tkFatArrow
+      token.literal = "=>"
+    elif l.peekChar() == '=':
       l.readChar()
       token.kind = tkEqEq
       token.literal = "=="
@@ -132,10 +136,10 @@ proc nextToken*(l: var Lexer): Token =
     token.literal = "*"
   of '/':
     if l.peekChar() == '/':
-      # Пропускаем комментарии
+      # Пропускаем однострочные комментарии
       while l.ch != '\n' and l.ch != '\0':
         l.readChar()
-      return l.nextToken()
+      return l.nextToken()  # Возвращаем следующий токен после комментария
     else:
       token.kind = tkSlash
       token.literal = "/"
@@ -220,12 +224,13 @@ proc nextToken*(l: var Lexer): Token =
   l.readChar()
   return token
 
+# Парсер
 proc newParser*(input: string): Parser =
   var p: Parser
   p.lexer = initLexer(input)
   p.curToken = p.lexer.nextToken()
   p.peekToken = p.lexer.nextToken()
-  p.state = CompilerState(errors: @[], warnings: @[])  # Явная инициализация
+  p.state = CompilerState(errors: @[], warnings: @[])
   return p
 
 proc nextToken(p: var Parser) =
@@ -245,16 +250,16 @@ proc parseType(p: var Parser): (WolframType, bool) =
   var typ: WolframType
   var isConst = false
   
-  # Явно определяем тип
-  case p.curToken.literal
-  of "int": typ = wtInt
-  of "float": typ = wtFloat  
-  of "bool": typ = wtBool
-  of "str": typ = wtString
+  # Определяем тип по TokenKind
+  case p.curToken.kind
+  of tkTypeInt: typ = wtInt
+  of tkTypeFloat: typ = wtFloat
+  of tkTypeBool: typ = wtBool
+  of tkTypeStr: typ = wtString
   else:
     p.state.error(&"Неизвестный тип: {p.curToken.literal}", 
                   p.curToken.line, p.curToken.column)
-    return (wtUnknown, false)  # ЯВНЫЙ RETURN
+    return (wtUnknown, false)
   
   # Проверяем, есть ли модификатор ::const
   if p.peekToken.kind == tkColonColon:
@@ -264,7 +269,7 @@ proc parseType(p: var Parser): (WolframType, bool) =
     else:
       p.state.error("Ожидался 'const' после '::'", 
                     p.curToken.line, p.curToken.column)
-      return (typ, false)  # ЯВНЫЙ RETURN
+      return (typ, false)
   
   return (typ, isConst)
 
@@ -423,33 +428,31 @@ proc parseRefactor(p: var Parser): Node =
   if not p.expectPeek(tkFatArrow):
     return nil
   
-  if not p.expectPeek(tkIdent):
+  # Просто получаем следующий токен и проверяем, что это тип
+  p.nextToken()
+  if p.curToken.kind notin {tkTypeInt, tkTypeFloat, tkTypeBool, tkTypeStr}:
+    p.state.error("Ожидался тип (int, float, bool, str)", p.curToken.line, p.curToken.column)
     return nil
   
-  # Парсим тип для refactor (без модификаторов)
-  let toTypeStr = p.curToken.literal
+  # Определяем тип
   var toType = wtUnknown
+  case p.curToken.kind
+  of tkTypeInt: toType = wtInt
+  of tkTypeFloat: toType = wtFloat
+  of tkTypeBool: toType = wtBool
+  of tkTypeStr: toType = wtString
+  else: discard
   
-  case toTypeStr
-  of "int": toType = wtInt
-  of "float": toType = wtFloat
-  of "bool": toType = wtBool
-  of "str": toType = wtString
-  else:
-    p.state.error(&"Неизвестный тип: {toTypeStr}", 
-                  p.curToken.line, p.curToken.column)
-    return nil
+  # Проверяем, есть ли значение в скобках
+  var refactorValue: Node = nil
   
-  # Проверяем, есть ли значение для refactor
   if p.peekToken.kind == tkLParen:
     p.nextToken() # Пропускаем (
-    if not p.expectPeek(tkString):
-      p.state.error("Ожидалась строка в refactor", 
-                    p.curToken.line, p.curToken.column)
-      return nil
+    p.nextToken() # Переходим к значению
+    refactorValue = p.parseExpression()
     
-    # TODO: обработать значение для refactor
-    let refactorValue = p.curToken.literal
+    if refactorValue == nil:
+      return nil
     
     if not p.expectPeek(tkRParen):
       return nil
@@ -457,40 +460,39 @@ proc parseRefactor(p: var Parser): Node =
   if not p.expectPeek(tkSemi):
     return nil
   
-  Node(
+  # Создаем узел
+  let node = Node(
     kind: nkRefactor,
     line: line,
     column: column,
     refactorTarget: target,
-    refactorToType: toType
+    refactorToType: toType,
+    refactorValue: refactorValue
   )
+  
+  return node
 
 proc parseStatement(p: var Parser): Node =
-  # Проверяем, является ли токен типом (int, float, bool, str)
-  case p.curToken.literal
-  of "int", "float", "bool", "str":
+  case p.curToken.kind
+  of tkTypeInt, tkTypeFloat, tkTypeBool, tkTypeStr:
     # Это объявление переменной или константы
     return p.parseVarDecl()
-  else:
-    case p.curToken.kind
-    of tkIdent:
-      # Это может быть присваивание или вызов функции
-      # Простая проверка: если следующий токен =, то это присваивание
-      if p.peekToken.kind == tkEq:
-        return p.parseAssignment()
-      else:
-        # TODO: добавить обработку вызовов функций
-        p.state.error(&"Нераспознанная конструкция: {p.curToken.literal}", 
-                      p.curToken.line, p.curToken.column)
-        return nil
-    of tkSendln:
-      return p.parseSendln()
-    of tkRefactor:
-      return p.parseRefactor()
+  of tkIdent:
+    # Это может быть присваивание
+    if p.peekToken.kind == tkEq:
+      return p.parseAssignment()
     else:
-      p.state.error(&"Недопустимое выражение: {p.curToken.literal}", 
+      p.state.error(&"Нераспознанная конструкция: {p.curToken.literal}", 
                     p.curToken.line, p.curToken.column)
       return nil
+  of tkSendln:
+    return p.parseSendln()
+  of tkRefactor:
+    return p.parseRefactor()
+  else:
+    p.state.error(&"Недопустимое выражение: {p.curToken.kind}", 
+                  p.curToken.line, p.curToken.column)
+    return nil
 
 proc parseProgram*(p: var Parser): Node =
   let program = Node(kind: nkProgram, line: 1, column: 1)

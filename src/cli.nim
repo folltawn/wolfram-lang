@@ -1,6 +1,6 @@
 ## CLI интерфейс для компилятора Wolfram
 
-import os, strutils, strformat
+import os, strutils, strformat, osproc
 import ./types, ./errors, ./parser, ./compiler, ./config
 
 const
@@ -142,12 +142,20 @@ proc runFile(filename: string) =
   
   # Компилируем C код
   echo "Компиляция в C..."
-  let compileCmd = &"gcc -o {exeFile} {cFile} 2>&1"
-  let (compileOutput, exitCode) = gorgeEx(compileCmd)
+  
+  # Упрощенный вариант для Windows
+  let compileCmd = "gcc -o \"" & exeFile & "\" \"" & cFile & "\""
+  echo "Выполняется: ", compileCmd
+  
+  let (output, exitCode) = execCmdEx(compileCmd)
   
   if exitCode != 0:
-    echo "Ошибка компиляции C кода:"
-    echo compileOutput
+    echo "Ошибка компиляции C кода (код: ", exitCode, ")"
+    # Покажем содержимое сгенерированного C файла для отладки
+    echo "\nСгенерированный C код:"
+    echo "====================="
+    echo cCode
+    echo "====================="
     quit(1)
   
   # Запускаем исполняемый файл
@@ -180,8 +188,8 @@ proc buildProject(configFile: string) =
       
       # Компилируем в исполняемый файл
       let exeFile = changeFileExt(file, "")
-      let compileCmd = &"gcc -o {exeFile} {cFile} 2>&1"
-      let (compileOutput, exitCode) = gorgeEx(compileCmd)
+      let compileCmd = "gcc -o \"" & exeFile & "\" \"" & cFile & "\""
+      let (compileOutput, exitCode) = execCmdEx(compileCmd)
       
       if exitCode != 0:
         echo "  Ошибка компиляции:"

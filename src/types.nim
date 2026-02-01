@@ -16,8 +16,9 @@ type
     tkPlus, tkMinus, tkStar, tkSlash, tkPercent
     tkEq, tkEqEq, tkNotEq, tkLt, tkGt, tkLtEq, tkGtEq
     tkLParen, tkRParen, tkLBrace, tkRBrace
-    tkColon, tkColonColon, tkSemi, tkComma, tkArrow, tkFatArrow  # ИЗМЕНЕНО: добавили tkColonColon
-    tkLet, tkConst, tkIf, tkElse, tkWhile, tkReturn
+    tkColon, tkColonColon, tkSemi, tkComma, tkArrow, tkFatArrow
+    tkTypeInt, tkTypeFloat, tkTypeBool, tkTypeStr  # ДОБАВИМ ОТДЕЛЬНЫЕ ТОКЕНЫ ДЛЯ ТИПОВ!
+    tkConst, tkIf, tkElse, tkWhile, tkReturn
     tkSendln, tkRefactor
     tkEOF, tkIllegal
   
@@ -79,6 +80,7 @@ type
     of nkRefactor:
       refactorTarget*: Node
       refactorToType*: WolframType
+      refactorValue*: Node
     
     of nkBlock:
       blockStmts*: seq[Node]
