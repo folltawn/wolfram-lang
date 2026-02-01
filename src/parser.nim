@@ -1,6 +1,6 @@
 ## Лексер и парсер для языка Wolfram
 
-import strformat, tables
+import strformat, tables, strutils
 import ./types, ./errors
 
 type
@@ -273,6 +273,70 @@ proc parseType(p: var Parser): (WolframType, bool) =
   
   return (typ, isConst)
 
+proc parseStringInterpolation(p: var Parser, strValue: string): Node =
+  ## Парсит строку с интерполяцией типа "{{x}}!"
+  let line = p.curToken.line
+  let column = p.curToken.column
+  
+  var parts: seq[Node]
+  var i = 0
+  
+  while i < strValue.len:
+    if i + 1 < strValue.len and strValue[i] == '{' and strValue[i+1] == '{':
+      # Нашли начало интерполяции {{ 
+      i += 2  # Пропускаем {{
+      
+      # Ищем закрывающие }}
+      var varStart = i
+      while i < strValue.len and not (strValue[i] == '}' and i+1 < strValue.len and strValue[i+1] == '}'):
+        i += 1
+      
+      if i >= strValue.len or not (strValue[i] == '}' and strValue[i+1] == '}'):
+        p.state.error("Незакрытая интерполяция строки", line, column)
+        return nil
+      
+      let varName = strValue[varStart..<i].strip()
+      
+      # Создаем узел для переменной
+      let varNode = Node(
+        kind: nkIdentifier,
+        line: line,
+        column: column,
+        identName: varName
+      )
+      parts.add(varNode)
+      
+      i += 2  # Пропускаем }}
+    else:
+      # Обычный текст
+      var textStart = i
+      while i < strValue.len and not (i+1 < strValue.len and strValue[i] == '{' and strValue[i+1] == '{'):
+        i += 1
+      
+      if textStart < i:
+        let text = strValue[textStart..<i]
+        if text.len > 0:
+          let textNode = Node(
+            kind: nkLiteral,
+            line: line,
+            column: column,
+            litType: wtString,
+            litValue: text
+          )
+          parts.add(textNode)
+  
+  # Создаем узел интерполяции
+  if parts.len == 1 and parts[0].kind == nkLiteral:
+    # Если только текст без интерполяции, возвращаем просто литерал
+    return parts[0]
+  else:
+    return Node(
+      kind: nkStringInterpolation,
+      line: line,
+      column: column,
+      interpParts: parts
+    )
+
 proc parseLiteral(p: var Parser): Node =
   let node = Node(kind: nkLiteral, line: p.curToken.line, column: p.curToken.column)
   
@@ -287,8 +351,12 @@ proc parseLiteral(p: var Parser): Node =
     node.litType = wtBool
     node.litValue = p.curToken.literal
   of tkString:
-    node.litType = wtString
-    node.litValue = p.curToken.literal
+    # Проверяем на интерполяцию
+    if "{{" in p.curToken.literal:
+      return p.parseStringInterpolation(p.curToken.literal)
+    else:
+      node.litType = wtString
+      node.litValue = p.curToken.literal
   else:
     p.state.error(&"Недопустимый литерал: {p.curToken.literal}", 
                   p.curToken.line, p.curToken.column)

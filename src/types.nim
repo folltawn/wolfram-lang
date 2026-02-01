@@ -9,7 +9,7 @@ type
     wtString = "str"
     wtVoid = "void"
     wtUnknown = "unknown"
-  
+
   # Лексемы
   TokenKind* = enum
     tkInt, tkFloat, tkString, tkBool, tkIdent
@@ -43,6 +43,7 @@ type
     nkBlock
     nkIf
     nkWhile
+    nkStringInterpolation
   
   Node* = ref object
     line*, column*: int
@@ -55,6 +56,9 @@ type
       declType*: WolframType
       declValue*: Node
     
+    of nkStringInterpolation:
+      interpParts*: seq[Node]
+
     of nkAssignment:
       assignName*: string
       assignValue*: Node
