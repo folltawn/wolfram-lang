@@ -11,6 +11,9 @@ type
     typeMap*: Table[string, string]
     tempCounter*: int
 
+# Forward declaration
+proc generateNode(g: var CodeGenerator, node: Node)
+
 proc getTempVar(g: var CodeGenerator): string =
   g.tempCounter += 1
   result = &"__temp_{g.tempCounter}"
@@ -115,6 +118,8 @@ proc generateExpression(g: var CodeGenerator, node: Node): string =
     g.generateIdentifier(node.identName)
   of nkStringInterpolation:
     g.generateStringInterpolation(node)
+  of nkFunctionCall:
+    node.callName & "()"
   else:
     g.state.error(&"Неподдерживаемое выражение: {node.kind}", node.line, node.column)
     ""
@@ -168,6 +173,43 @@ proc generateRefactor(g: var CodeGenerator, node: Node) =
     g.state.error(&"Неподдерживаемое преобразование типа: {node.refactorToType}", 
                   node.line, node.column)
 
+proc generateFunctionDecl(g: var CodeGenerator, node: Node) =
+  ## Генерирует код для объявления функции
+  let funcName = node.funcName
+  let isStatic = node.funcKind == fkStatic
+  
+  # Всегда создаем функцию C
+  if isStatic:
+    g.writeln(&"static int {funcName}() {{")
+  else:
+    g.writeln(&"int {funcName}() {{")
+  
+  g.indent()
+  
+  # Генерируем тело функции
+  for stmt in node.funcBody:
+    g.generateNode(stmt)
+  
+  g.unindent()
+  g.writeln("}")
+  g.writeln("")
+  
+  # Если функция НЕ static, вызываем ее сразу
+  if not isStatic:
+    g.writeln(&"{funcName}();")
+
+proc generateFunctionCall(g: var CodeGenerator, node: Node) =
+  ## Генерирует код для вызова функции
+  g.writeln(&"{node.callName}();")
+
+proc generateReturn(g: var CodeGenerator, node: Node) =
+  ## Генерирует код для return
+  if node.returnValue != nil:
+    let value = g.generateExpression(node.returnValue)
+    g.writeln(&"return {value};")
+  else:
+    g.writeln("return;")
+
 proc generateNode(g: var CodeGenerator, node: Node) =
   case node.kind
   of nkVarDecl, nkConstDecl:
@@ -178,6 +220,12 @@ proc generateNode(g: var CodeGenerator, node: Node) =
     g.generateSendln(node)
   of nkRefactor:
     g.generateRefactor(node)
+  of nkFunctionDecl:
+    g.generateFunctionDecl(node)
+  of nkFunctionCall:
+    g.generateFunctionCall(node)
+  of nkReturn:
+    g.generateReturn(node)
   else:
     g.state.error(&"Неподдерживаемый узел AST: {node.kind}", node.line, node.column)
 

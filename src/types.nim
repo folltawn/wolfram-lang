@@ -20,6 +20,7 @@ type
     tkTypeInt, tkTypeFloat, tkTypeBool, tkTypeStr  # ДОБАВИМ ОТДЕЛЬНЫЕ ТОКЕНЫ ДЛЯ ТИПОВ!
     tkConst, tkIf, tkElse, tkWhile, tkReturn
     tkSendln, tkRefactor
+    tkFunc, tkStatic
     tkEOF, tkIllegal
   
   Token* = object
@@ -27,8 +28,12 @@ type
     literal*: string
     line*: int
     column*: int
+
+  # Добавим новые типы функций
+  FunctionKind* = enum
+    fkNormal,      # обычная функция (выполняется автоматически)
+    fkStatic       # статическая функция (требует явного вызова)
   
-  # AST узлы
   NodeKind* = enum
     nkProgram
     nkVarDecl
@@ -44,6 +49,11 @@ type
     nkIf
     nkWhile
     nkStringInterpolation
+    # Добавляем новые типы:
+    nkFunctionDecl  # объявление функции: func::name()
+    nkFunctionCall  # вызов функции: name()
+    nkReturn        # return выражение
+    nkEmpty         # пустой узел
   
   Node* = ref object
     line*, column*: int
@@ -97,6 +107,21 @@ type
     of nkWhile:
       whileCond*: Node
       whileBody*: Node
+    
+    # Добавляем новые поля:
+    of nkFunctionDecl:
+      funcName*: string
+      funcKind*: FunctionKind
+      funcBody*: seq[Node]
+    
+    of nkFunctionCall:
+      callName*: string
+    
+    of nkReturn:
+      returnValue*: Node
+    
+    of nkEmpty:
+      discard
   
   # Конфигурация проекта
   ProjectConfig* = object

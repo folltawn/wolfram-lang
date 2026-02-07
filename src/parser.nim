@@ -18,12 +18,21 @@ type
     peekToken*: Token
     state*: CompilerState
 
+# Forward declarations
+proc parseFunctionCall(p: var Parser): Node
+proc parseReturnStatement(p: var Parser): Node
+proc parseFunctionDecl(p: var Parser): Node
+proc parseStatement(p: var Parser): Node
+
 # Ключевые слова
 const Keywords = {
   "int": tkTypeInt, "float": tkTypeFloat, "bool": tkTypeBool, "str": tkTypeStr,
   "const": tkConst, "true": tkBool, "false": tkBool,
   "if": tkIf, "else": tkElse, "while": tkWhile,
-  "sendln": tkSendln, "refactor": tkRefactor
+  "sendln": tkSendln, "refactor": tkRefactor,
+  "func": tkFunc,
+  "return": tkReturn,
+  "static": tkStatic
 }.toTable
 
 # Вспомогательные процедуры
@@ -377,7 +386,11 @@ proc parseExpression(p: var Parser): Node =
   of tkInt, tkFloat, tkBool, tkString:
     return p.parseLiteral()
   of tkIdent:
-    return p.parseIdentifier()
+    # Это может быть идентификатор или вызов функции
+    if p.peekToken.kind == tkLParen:
+      return p.parseFunctionCall()
+    else:
+      return p.parseIdentifier()
   else:
     p.state.error(&"Недопустимое выражение: {p.curToken.literal}", 
                   p.curToken.line, p.curToken.column)
@@ -540,14 +553,125 @@ proc parseRefactor(p: var Parser): Node =
   
   return node
 
+proc parseFunctionCall(p: var Parser): Node =
+  ## Парсит вызов функции: name()
+  let line = p.curToken.line
+  let column = p.curToken.column
+  let name = p.curToken.literal
+  
+  # Проверяем скобки
+  if not p.expectPeek(tkLParen):
+    return nil
+  
+  if not p.expectPeek(tkRParen):
+    return nil
+  
+  result = Node(
+    kind: nkFunctionCall,
+    line: line,
+    column: column,
+    callName: name
+  )
+
+proc parseReturnStatement(p: var Parser): Node =
+  ## Парсит return выражение: return 0;
+  let line = p.curToken.line
+  let column = p.curToken.column
+  
+  p.nextToken() # Переходим к возвращаемому значению
+  
+  # Парсим возвращаемое выражение
+  let returnValue = p.parseExpression()
+  if returnValue == nil:
+    return nil
+  
+  # Проверяем точку с запятой
+  if not p.expectPeek(tkSemi):
+    return nil
+  
+  result = Node(
+    kind: nkReturn,
+    line: line,
+    column: column,
+    returnValue: returnValue
+  )
+
+proc parseFunctionDecl(p: var Parser): Node =
+  ## Парсит объявление функции: func::name() или func::name(): static
+  let line = p.curToken.line
+  let column = p.curToken.column
+  
+  # Проверяем, что после func идет ::
+  if not p.expectPeek(tkColonColon):
+    return nil
+  
+  # Имя функции
+  if not p.expectPeek(tkIdent):
+    return nil
+  
+  let name = p.curToken.literal
+  
+  # Параметры (пока только пустые скобки)
+  if not p.expectPeek(tkLParen):
+    return nil
+  
+  if not p.expectPeek(tkRParen):
+    return nil
+  
+  # Проверяем, есть ли модификатор static
+  var funcKind = fkNormal
+  
+  if p.peekToken.kind == tkColon:
+    p.nextToken() # Пропускаем :
+    
+    if p.peekToken.kind == tkStatic:
+      p.nextToken() # Пропускаем static
+      funcKind = fkStatic
+    else:
+      p.state.error("Ожидался 'static' после ':'", 
+                    p.curToken.line, p.curToken.column)
+      return nil
+  
+  # Тело функции в фигурных скобках
+  if not p.expectPeek(tkLBrace):
+    return nil
+  
+  p.nextToken() # Переходим к первому токену в теле
+  
+  var body: seq[Node] = @[]
+  
+  # Парсим тело функции до закрывающей скобки
+  while p.curToken.kind != tkRBrace and p.curToken.kind != tkEOF:
+    if p.curToken.kind == tkReturn:
+      let returnNode = parseReturnStatement(p)
+      if returnNode != nil:
+        body.add(returnNode)
+    else:
+      # Парсим другие выражения
+      let stmt = p.parseStatement()
+      if stmt != nil:
+        body.add(stmt)
+    p.nextToken()
+  
+  # Создаем узел функции
+  result = Node(
+    kind: nkFunctionDecl,
+    line: line,
+    column: column,
+    funcName: name,
+    funcKind: funcKind,
+    funcBody: body
+  )
+
 proc parseStatement(p: var Parser): Node =
   case p.curToken.kind
   of tkTypeInt, tkTypeFloat, tkTypeBool, tkTypeStr:
-    # Это объявление переменной или константы
     return p.parseVarDecl()
   of tkIdent:
-    # Это может быть присваивание
-    if p.peekToken.kind == tkEq:
+    # Это может быть присваивание или вызов функции
+    if p.peekToken.kind == tkLParen:
+      return p.parseFunctionCall()
+    elif p.peekToken.kind == tkEq:
       return p.parseAssignment()
     else:
       p.state.error(&"Нераспознанная конструкция: {p.curToken.literal}", 
@@ -557,6 +681,10 @@ proc parseStatement(p: var Parser): Node =
     return p.parseSendln()
   of tkRefactor:
     return p.parseRefactor()
+  of tkFunc:
+    return p.parseFunctionDecl()
+  of tkReturn:
+    return p.parseReturnStatement()
   else:
     p.state.error(&"Недопустимое выражение: {p.curToken.kind}", 
                   p.curToken.line, p.curToken.column)

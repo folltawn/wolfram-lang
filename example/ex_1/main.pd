@@ -1,2 +1,7 @@
-str::const x = "Hello World";
-sendln(x);
+func::name() {
+    int x = 15;
+    return x;
+}
+
+int y = name();
+sendln("{{y}}");
