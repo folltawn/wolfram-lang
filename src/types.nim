@@ -1,7 +1,7 @@
-## Основные типы данных для компилятора Wolfram
+## Основные типы данных для компилятора PD
 
 type
-  # Типы данных Wolfram
+  # Типы данных PD
   WolframType* = enum
     wtInt = "int"
     wtFloat = "float"
@@ -104,3 +104,4 @@ type
     version*: string
     author*: seq[string]
     files*: seq[string]
+    projectDir*: string

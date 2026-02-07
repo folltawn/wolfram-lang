@@ -1,4 +1,4 @@
-## Лексер и парсер для языка Wolfram
+## Лексер и парсер для языка PD
 
 import strformat, tables, strutils
 import ./types, ./errors

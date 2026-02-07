@@ -1,12 +1,14 @@
 ## Работа с конфигурацией проекта
 
-import strutils
+import strutils, os
 import ./types
 
 proc loadConfig*(filename: string): ProjectConfig =
   ## Загрузить конфигурацию проекта
   try:
     let content = readFile(filename)
+    let configDir = absolutePath(filename).splitFile.dir
+    result.projectDir = configDir
     
     for line in content.splitLines():
       let trimmed = line.strip()
@@ -35,7 +37,21 @@ proc loadConfig*(filename: string): ProjectConfig =
           let filesStr = parts[1].strip().strip(chars={'[', ']'})
           if filesStr.len > 0:
             for file in filesStr.split(','):
-              result.files.add(file.strip().strip(chars={'"', ' '}))
+              let filePath = file.strip().strip(chars={'"', ' '})
+              # Проверяем расширение
+              if not filePath.endsWith(".pd"):
+                echo "Предупреждение: файл '", filePath, "' не имеет расширения .pd"
+                # Либо игнорируем, либо добавляем с предупреждением
+                # result.files.add(...) - если хотите все равно добавить
+              else:
+                # Преобразуем путь
+                let absPath = if isAbsolute(filePath): filePath else: configDir / filePath
+                result.files.add(absPath)
+    
+    # Проверяем, что есть хотя бы один .pd файл
+    if result.files.len == 0:
+      echo "Ошибка: В конфигурации нет файлов с расширением .pd"
+      quit(1)
   
   except IOError:
     echo "Ошибка: Не удалось прочитать файл ", filename

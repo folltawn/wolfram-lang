@@ -1,4 +1,4 @@
-## Компилятор Wolfram -> C (промежуточный этап)
+## Компилятор PD -> C (промежуточный этап)
 
 import strformat, strutils, math, tables
 import ./types, ./errors
@@ -185,7 +185,7 @@ proc generateCode*(g: var CodeGenerator, ast: Node): string =
   ## Генерирует C-код из AST
   
   # Заголовок
-  g.writeln("// Сгенерировано компилятором Wolfram")
+  g.writeln("// Сгенерировано компилятором Palladium")
   g.writeln("#include <stdio.h>")
   g.writeln("#include <stdbool.h>")
   g.writeln("#include <string.h>")

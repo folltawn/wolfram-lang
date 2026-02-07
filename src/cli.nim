@@ -1,4 +1,4 @@
-## CLI интерфейс для компилятора Wolfram
+## CLI интерфейс для компилятора PD
 
 import os, strutils, strformat, osproc
 import ./types, ./errors, ./parser, ./compiler, ./config
@@ -6,10 +6,21 @@ import ./types, ./errors, ./parser, ./compiler, ./config
 const
   Version = "1.0.0"
   HelpText = """
-Компилятор Wolfram v""" & Version & """
+
+████████████████████████████████████████████
+
+              ▄              ▄   
+            ▄█▀ █████▄ ▄▄▄▄  ▀█▄ 
+            ██  ██▄▄█▀ ██▀██  ██ 
+            ▀█▄ ██     ████▀ ▄█▀ 
+              ▀              ▀   
+
+████████████████████████████████████████████
+
+Компилятор Palladium v""" & Version & """
 
 Использование:
-  wfm <команда> [аргументы]
+  pd <команда> [аргументы]
 
 Команды:
   --version             Показать версию компилятора
@@ -135,8 +146,8 @@ proc runFile(filename: string) =
   
   # Сохраняем временный C файл
   let tempDir = getTempDir()
-  let cFile = tempDir / "wolfram_temp.c"
-  let exeFile = tempDir / "wolfram_temp.exe"
+  let cFile = tempDir / "pd_temp.c"
+  let exeFile = tempDir / "pd_temp.exe"
   
   writeFile(cFile, cCode)
   
@@ -210,21 +221,14 @@ proc handleCommand*() =
   
   case cmd
   of "--version":
-    echo &"Wolfram Compiler v{Version}"
+    echo &"Palladium Compiler v{Version}"
   
   of "--help":
     echo HelpText
   
   of "--docs":
-    echo "Документация Wolfram (в разработке)"
-    echo "==================================="
-    echo ""
-    echo "Основные конструкции:"
-    echo "  int x = 10;          // Целочисленная переменная"
-    echo "  const str s = \"hi\";  // Константная строка"
-    echo "  x = 20;              // Присваивание"
-    echo "  sendln(\"Hello\");     // Вывод строки"
-    echo "  refactor(x) => str;  // Преобразование типа"
+    echo "Palladium Docs:"
+    echo "  > https://folltawn.github.io/ru/pdlang/docs"
   
   of "parse":
     if paramCount() < 2:
