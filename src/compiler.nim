@@ -10,6 +10,7 @@ type
     state*: CompilerState
     typeMap*: Table[string, string]
     tempCounter*: int
+    funcMap*: Table[string, string]
 
 # Forward declaration
 proc generateNode(g: var CodeGenerator, node: Node)
@@ -119,14 +120,43 @@ proc generateExpression(g: var CodeGenerator, node: Node): string =
   of nkStringInterpolation:
     g.generateStringInterpolation(node)
   of nkFunctionCall:
-    node.callName & "()"
+    # Используем map для получения безопасного имени
+    if node.callName in g.funcMap:
+      g.funcMap[node.callName] & "()"
+    else:
+      g.state.error(&"Неизвестная функция: {node.callName}", node.line, node.column)
+      "/* ошибка */"
   else:
     g.state.error(&"Неподдерживаемое выражение: {node.kind}", node.line, node.column)
     ""
 
 proc generateSendln(g: var CodeGenerator, node: Node) =
-  let arg = g.generateExpression(node.sendlnArg)
-  g.writeln(&"printf(\"%s\\n\", {arg});")
+  let arg = node.sendlnArg
+  
+  case arg.kind
+  of nkLiteral:
+    case arg.litType
+    of wtInt:
+      g.writeln(&"printf(\"%d\\n\", {arg.litValue});")
+    of wtFloat:
+      g.writeln(&"printf(\"%f\\n\", {arg.litValue});")
+    of wtBool:
+      g.writeln(&"printf(\"%s\\n\", {arg.litValue} ? \"true\" : \"false\");")
+    of wtString:
+      g.writeln(&"printf(\"%s\\n\", \"{escapeString(arg.litValue)}\");")
+    else:
+      g.writeln(&"printf(\"%s\\n\", {g.generateExpression(arg)});")
+  
+  of nkIdentifier:
+    # Для переменных нужно знать их тип
+    # Пока используем __to_str для всех
+    g.writeln(&"printf(\"%s\\n\", __to_str({arg.identName}));")
+  
+  of nkStringInterpolation:
+    g.writeln(&"printf(\"%s\\n\", {g.generateStringInterpolation(arg)});")
+  
+  else:
+    g.writeln(&"printf(\"%s\\n\", {g.generateExpression(arg)});")
 
 proc generateVarDecl(g: var CodeGenerator, node: Node) =
   let ctype = typeToCType(node.declType)
@@ -175,32 +205,41 @@ proc generateRefactor(g: var CodeGenerator, node: Node) =
 
 proc generateFunctionDecl(g: var CodeGenerator, node: Node) =
   ## Генерирует код для объявления функции
-  let funcName = node.funcName
-  let isStatic = node.funcKind == fkStatic
+  let userFuncName = node.funcName
+  let safeFuncName = &"func_{g.tempCounter}_{userFuncName}"
+  g.tempCounter += 1
   
-  # Всегда создаем функцию C
-  if isStatic:
-    g.writeln(&"static int {funcName}() {{")
+  # Запоминаем соответствие
+  g.funcMap[userFuncName] = safeFuncName
+  
+  # Если это main, запоминаем особо
+  if userFuncName == "main":
+    g.funcMap["__user_main"] = safeFuncName
+  
+  let returnType = "int"  # Все функции возвращают int
+  
+  if node.funcKind == fkStatic:
+    g.writeln(&"static {returnType} {safeFuncName}() {{")
   else:
-    g.writeln(&"int {funcName}() {{")
+    g.writeln(&"{returnType} {safeFuncName}() {{")
   
   g.indent()
-  
-  # Генерируем тело функции
   for stmt in node.funcBody:
     g.generateNode(stmt)
-  
   g.unindent()
   g.writeln("}")
   g.writeln("")
-  
-  # Если функция НЕ static, вызываем ее сразу
-  if not isStatic:
-    g.writeln(&"{funcName}();")
 
 proc generateFunctionCall(g: var CodeGenerator, node: Node) =
-  ## Генерирует код для вызова функции
-  g.writeln(&"{node.callName}();")
+  ## Генерирует код для вызова функции с учетом переименования
+  let userFuncName = node.callName
+  
+  # Проверяем, есть ли такая функция в map
+  if userFuncName in g.funcMap:
+    # Используем безопасное имя из map
+    g.writeln(&"  {g.funcMap[userFuncName]}();")
+  else:
+    g.state.error(&"Неизвестная функция: {userFuncName}", node.line, node.column)
 
 proc generateReturn(g: var CodeGenerator, node: Node) =
   ## Генерирует код для return
@@ -230,8 +269,11 @@ proc generateNode(g: var CodeGenerator, node: Node) =
     g.state.error(&"Неподдерживаемый узел AST: {node.kind}", node.line, node.column)
 
 proc generateCode*(g: var CodeGenerator, ast: Node): string =
-  ## Генерирует C-код из AST
+  ## Генерирует C-код из AST с уникальными именами для всех функций
   
+  g.tempCounter = 0
+  g.funcMap.clear()
+
   # Заголовок
   g.writeln("// Сгенерировано компилятором Palladium")
   g.writeln("#include <stdio.h>")
@@ -239,9 +281,9 @@ proc generateCode*(g: var CodeGenerator, ast: Node): string =
   g.writeln("#include <string.h>")
   g.writeln("#include <stdlib.h>")
   g.writeln("#include <math.h>")
+  g.writeln("")
   
   # Вспомогательные функции
-  g.writeln("")
   g.writeln("char* __nice_float_to_str(double value) {")
   g.indent()
   g.writeln("char* buf = malloc(32);")
@@ -297,11 +339,49 @@ proc generateCode*(g: var CodeGenerator, ast: Node): string =
   g.writeln(")(x)")
   g.writeln("")
   
+  # Сначала генерируем ВСЕ функции пользователя с уникальными именами
+  for stmt in ast.statements:
+    if stmt.kind == nkFunctionDecl:
+      let userFuncName = stmt.funcName
+      let safeFuncName = &"func_{g.tempCounter}_{userFuncName}"
+      g.tempCounter += 1
+      g.funcMap[userFuncName] = safeFuncName
+      
+      if userFuncName == "main":
+        g.funcMap["__user_main"] = safeFuncName
+  
+  # ВТОРОЙ ПРОХОД: Генерируем функции
+  # Сбросим tempCounter для функций (опционально)
+  g.tempCounter = 0
+  
+  for stmt in ast.statements:
+    if stmt.kind == nkFunctionDecl:
+      let safeFuncName = g.funcMap[stmt.funcName]
+      
+      let returnType = "int"
+      if stmt.funcKind == fkStatic:
+        g.writeln(&"static {returnType} {safeFuncName}() {{")
+      else:
+        g.writeln(&"{returnType} {safeFuncName}() {{")
+      
+      g.indent()
+      for bodyStmt in stmt.funcBody:
+        g.generateNode(bodyStmt)
+      g.unindent()
+      g.writeln("}")
+      g.writeln("")
+  
+  # Генерируем main
   g.writeln("int main() {")
   g.indent()
   
+  if "__user_main" in g.funcMap:
+    g.writeln("  " & g.funcMap["__user_main"] & "();")
+  
+  # Генерируем остальной код
   for stmt in ast.statements:
-    g.generateNode(stmt)
+    if stmt.kind != nkFunctionDecl:
+      g.generateNode(stmt)
   
   g.unindent()
   g.writeln("  return 0;")
