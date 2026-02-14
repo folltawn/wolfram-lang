@@ -272,12 +272,12 @@ proc nextToken*(l: var Lexer): Token =
 # Парсер
 
 
-proc newParser*(input: string): Parser =
+proc newParser*(input: string, filename: string = ""): Parser =
   var p: Parser
   p.lexer = initLexer(input)
   p.curToken = p.lexer.nextToken()
   p.peekToken = p.lexer.nextToken()
-  p.state = CompilerState(errors: @[], warnings: @[])
+  p.state = initCompilerState(input, filename)
   return p
 
 
@@ -290,13 +290,21 @@ proc nextToken(p: var Parser) =
 
 
 proc expectPeek(p: var Parser, kind: TokenKind): bool =
-  echo "expectPeek: looking for ", kind, " current peek: ", p.peekToken.kind
   if p.peekToken.kind == kind:
     p.nextToken()
     return true
   else:
-    p.state.error(&"Ожидался токен {kind}, получен {p.peekToken.kind}", 
-                  p.peekToken.line, p.peekToken.column)
+    let expected = case kind
+      of tkSemi: "';'"
+      of tkRParen: "')'"
+      of tkLParen: "'('"
+      of tkLBrace: "'{'"
+      of tkRBrace: "'}'"
+      of tkEq: "'='"
+      of tkEqEq: "'=='"
+      else: $kind
+    
+    p.state.error(&"Missing {expected}", p.peekToken.line, p.peekToken.column)
     return false
 
 

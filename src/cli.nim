@@ -135,15 +135,13 @@ proc debugFile(filename: string) =
     quit(1)
 
 proc compileFile(filename: string): string =
-  ## Скомпилировать .pd файл в C код
-  
   if not filename.toLowerAscii.endsWith(".pd"):
     echo &"Ошибка: Могу компилировать только .pd файлы"
     quit(1)
   
   try:
     let source = readFile(filename)
-    var parser = newParser(source)
+    var parser = newParser(source, filename)  # <-- передаём имя файла
     let ast = parser.parseProgram()
     
     if parser.state.hasErrors():
