@@ -1,0 +1,6 @@
+config:
+  project:
+    name: "Example"
+    version: "1.0.0"
+    author: []
+  files: ["main.pd", "copy.pd"]

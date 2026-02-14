@@ -18,7 +18,7 @@ type
     tkLParen, tkRParen, tkLBrace, tkRBrace
     tkColon, tkColonColon, tkSemi, tkComma, tkArrow, tkFatArrow
     tkTypeInt, tkTypeFloat, tkTypeBool, tkTypeStr  # ДОБАВИМ ОТДЕЛЬНЫЕ ТОКЕНЫ ДЛЯ ТИПОВ!
-    tkConst, tkIf, tkElsif, tkElse, tkWhile, tkReturn
+    tkConst, tkIf, tkElse, tkWhile, tkReturn
     tkSendln, tkRefactor
     tkFunc, tkStatic
     tkEOF, tkIllegal
@@ -46,13 +46,15 @@ type
     nkSendln
     nkRefactor
     nkBlock
-    nkIfStatement
+    nkIf
+    nkElsif
     nkWhile
     nkStringInterpolation
     # Добавляем новые типы:
     nkFunctionDecl  # объявление функции: func::name()
     nkFunctionCall  # вызов функции: name()
     nkReturn        # return выражение
+    
     nkEmpty         # пустой узел
   
   Node* = ref object
@@ -99,10 +101,15 @@ type
     of nkBlock:
       blockStmts*: seq[Node]
     
-    of nkIfStatement:
+    of nkIf:
       ifCond*: Node
       ifThen*: Node
       ifElse*: Node
+      ifElsifs*: seq[Node]
+    
+    of nkElsif:
+      elsifCond*: Node
+      elsifBody*: Node
     
     of nkWhile:
       whileCond*: Node

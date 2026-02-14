@@ -17,28 +17,19 @@ type
     errors*: seq[string]
     warnings*: seq[string]
 
-
-
 proc error*(state: var CompilerState, message: string, line = 0, column = 0) =
+  ## Добавить ошибку в состояние компилятора
   let location = if line > 0: &"({line}:{column}) " else: ""
-  let err = &"{location}{message}"
-  echo "ADDING ERROR: ", err  # ОТЛАДКА
-  state.errors.add(err)
-
-
+  state.errors.add(&"{location}{message}")
 
 proc warning*(state: var CompilerState, message: string, line = 0, column = 0) =
   ## Добавить предупреждение в состояние компилятора
   let location = if line > 0: &"({line}:{column}) " else: ""
   state.warnings.add(&"{location}{message}")
 
-
-
 proc hasErrors*(state: CompilerState): bool =
   ## Проверить наличие ошибок
   state.errors.len > 0
-
-
 
 proc showErrors*(state: CompilerState) =
   ## Вывести все ошибки
@@ -53,8 +44,6 @@ proc showErrors*(state: CompilerState) =
     echo "\nПредупреждения:"
     for i, warn in state.warnings:
       echo &"  {i+1}. {warn}"
-
-
 
 proc newCompileError*(message: string, line = 0, column = 0): ref CompileError =
   ## Создать новую ошибку компиляции

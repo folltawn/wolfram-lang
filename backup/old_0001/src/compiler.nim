@@ -13,40 +13,26 @@ type
     funcMap*: Table[string, string]
 
 # Forward declaration
-
-
 proc generateNode(g: var CodeGenerator, node: Node)
-
-
 
 proc getTempVar(g: var CodeGenerator): string =
   g.tempCounter += 1
   result = &"__temp_{g.tempCounter}"
 
-
-
 proc indent(g: var CodeGenerator) =
   g.indentLevel += 1
-
-
 
 proc unindent(g: var CodeGenerator) =
   g.indentLevel -= 1
 
-
-
 proc write(g: var CodeGenerator, text: string) =
   g.output.add(text)
-
-
 
 proc writeln(g: var CodeGenerator, text: string = "") =
   if text.len > 0:
     g.output.add("  ".repeat(g.indentLevel) & text & "\n")
   else:
     g.output.add("\n")
-
-
 
 proc typeToCType(t: WolframType): string =
   case t
@@ -56,8 +42,6 @@ proc typeToCType(t: WolframType): string =
   of wtString: "char*"
   of wtVoid: "void"
   else: "void*"
-
-
 
 proc escapeString(s: string): string =
   result = newStringOfCap(s.len * 2)
@@ -70,16 +54,12 @@ proc escapeString(s: string): string =
     of '\r': result.add("\\r")
     else: result.add(ch)
 
-
-
 proc generateIdentifier(g: var CodeGenerator, identName: string): string =
   ## Генерирует имя переменной с учетом преобразований типов
   if identName in g.typeMap:
     return g.typeMap[identName]
   else:
     return identName
-
-
 
 proc generateLiteral(g: var CodeGenerator, node: Node): string =
   case node.litType
@@ -89,8 +69,6 @@ proc generateLiteral(g: var CodeGenerator, node: Node): string =
   of wtString: 
     &"\"{escapeString(node.litValue)}\""
   else: "NULL"
-
-
 
 proc generateStringInterpolationPart(g: var CodeGenerator, part: Node): string =
   case part.kind
@@ -107,18 +85,12 @@ proc generateStringInterpolationPart(g: var CodeGenerator, part: Node): string =
   
   of nkIdentifier:
     let varName = g.generateIdentifier(part.identName)
-    # Проверяем, не const ли это
-    if part.identName in g.typeMap and g.typeMap[part.identName].contains("const"):
-      &"__to_str((char*){varName})"  # кастуем
-    else:
-      &"__to_str({varName})"
+    &"__to_str({varName})"
   
   else:
     g.state.error(&"Неподдерживаемый элемент интерполяции: {part.kind}", 
                   part.line, part.column)
     "\"\""
-
-
 
 proc generateStringInterpolation(g: var CodeGenerator, node: Node): string =
   if node.interpParts.len == 0:
@@ -139,46 +111,24 @@ proc generateStringInterpolation(g: var CodeGenerator, node: Node): string =
   
   return bufVar
 
-
-
 proc generateExpression(g: var CodeGenerator, node: Node): string =
   case node.kind
   of nkLiteral:
-    result = g.generateLiteral(node)  # <-- присвой результат
+    g.generateLiteral(node)
   of nkIdentifier:
-    result = g.generateIdentifier(node.identName)
+    g.generateIdentifier(node.identName)
   of nkStringInterpolation:
-    result = g.generateStringInterpolation(node)
+    g.generateStringInterpolation(node)
   of nkFunctionCall:
+    # Используем map для получения безопасного имени
     if node.callName in g.funcMap:
-      result = g.funcMap[node.callName] & "()"
+      g.funcMap[node.callName] & "()"
     else:
       g.state.error(&"Неизвестная функция: {node.callName}", node.line, node.column)
-      result = "/* ошибка */"
-  of nkBinaryExpr:
-    let left = g.generateExpression(node.left)
-    let right = g.generateExpression(node.right)
-    let op = case node.op
-      of tkEqEq: "=="
-      of tkNotEq: "!="
-      of tkLt: "<"
-      of tkGt: ">"
-      of tkLtEq: "<="
-      of tkGtEq: ">="
-      of tkPlus: "+"
-      of tkMinus: "-"
-      of tkStar: "*"
-      of tkSlash: "/"
-      of tkPercent: "%"
-      else:
-        g.state.error(&"Неподдерживаемый оператор: {node.op}", node.line, node.column)
-        "???"
-    result = &"({left} {op} {right})"
+      "/* ошибка */"
   else:
     g.state.error(&"Неподдерживаемое выражение: {node.kind}", node.line, node.column)
-    result = ""
-
-
+    ""
 
 proc generateSendln(g: var CodeGenerator, node: Node) =
   let arg = node.sendlnArg
@@ -208,8 +158,6 @@ proc generateSendln(g: var CodeGenerator, node: Node) =
   else:
     g.writeln(&"printf(\"%s\\n\", {g.generateExpression(arg)});")
 
-
-
 proc generateVarDecl(g: var CodeGenerator, node: Node) =
   let ctype = typeToCType(node.declType)
   let value = g.generateExpression(node.declValue)
@@ -219,14 +167,10 @@ proc generateVarDecl(g: var CodeGenerator, node: Node) =
   else:
     g.writeln(&"{ctype} {node.declName} = {value};")
 
-
-
 proc generateAssignment(g: var CodeGenerator, node: Node) =
   let target = g.generateIdentifier(node.assignName)
   let value = g.generateExpression(node.assignValue)
   g.writeln(&"{target} = {value};")
-
-
 
 proc generateRefactor(g: var CodeGenerator, node: Node) =
   let target = node.refactorTarget.identName
@@ -259,8 +203,6 @@ proc generateRefactor(g: var CodeGenerator, node: Node) =
     g.state.error(&"Неподдерживаемое преобразование типа: {node.refactorToType}", 
                   node.line, node.column)
 
-
-
 proc generateFunctionDecl(g: var CodeGenerator, node: Node) =
   ## Генерирует код для объявления функции
   let userFuncName = node.funcName
@@ -288,8 +230,6 @@ proc generateFunctionDecl(g: var CodeGenerator, node: Node) =
   g.writeln("}")
   g.writeln("")
 
-
-
 proc generateFunctionCall(g: var CodeGenerator, node: Node) =
   ## Генерирует код для вызова функции с учетом переименования
   let userFuncName = node.callName
@@ -301,8 +241,6 @@ proc generateFunctionCall(g: var CodeGenerator, node: Node) =
   else:
     g.state.error(&"Неизвестная функция: {userFuncName}", node.line, node.column)
 
-
-
 proc generateReturn(g: var CodeGenerator, node: Node) =
   ## Генерирует код для return
   if node.returnValue != nil:
@@ -311,61 +249,50 @@ proc generateReturn(g: var CodeGenerator, node: Node) =
   else:
     g.writeln("return;")
 
-# Добавь новую процедуру:
-
-
 proc generateIfStatement(g: var CodeGenerator, node: Node) =
-  ## Генерирует C-код для if-elsif-else
+  ## Генерирует код для if-elsif-else
   
-  # Генерируем условие (оно уже должно быть корректным C-выражением)
+  # Генерируем условие
   let cond = g.generateExpression(node.ifCond)
-  
   g.writeln(&"if ({cond}) {{")
   g.indent()
   
-  # Генерируем тело then
-  if node.ifThen != nil and node.ifThen.blockStmts.len > 0:
+  # Генерируем then-блок
+  if node.ifThen != nil and node.ifThen.kind == nkBlock:
     for stmt in node.ifThen.blockStmts:
       g.generateNode(stmt)
   
   g.unindent()
-  g.writeln("}")
+  g.write("}")
   
-  # Рекурсивно обрабатываем elsif/else цепочку
-  var currentElse = node.ifElse
-  while currentElse != nil:
-    if currentElse.kind == nkIfStatement:
-      # Это elsif
-      let elsifCond = g.generateExpression(currentElse.ifCond)
-      g.writeln(&"else if ({elsifCond}) {{")
-      g.indent()
-      
-      if currentElse.ifThen != nil and currentElse.ifThen.blockStmts.len > 0:
-        for stmt in currentElse.ifThen.blockStmts:
-          g.generateNode(stmt)
-      
-      g.unindent()
-      g.writeln("}")
-      
-      currentElse = currentElse.ifElse
-    elif currentElse.kind == nkBlock:
-      # Это else
-      g.writeln("else {")
-      g.indent()
-      
-      if currentElse.blockStmts.len > 0:
-        for stmt in currentElse.blockStmts:
-          g.generateNode(stmt)
-      
-      g.unindent()
-      g.writeln("}")
-      
-      currentElse = nil
-    else:
-      # Неизвестный тип
-      currentElse = nil
-
-
+  # Генерируем elsif ветки - ТОЛЬКО проверка длины
+  if node.ifElsifs.len > 0:  # <-- УБРАНО сравнение с nil
+    for elsifNode in node.ifElsifs:
+      if elsifNode.kind == nkElsif:
+        let elsifCond = g.generateExpression(elsifNode.elsifCond)
+        g.writeln(" else if ({elsifCond}) {{")
+        g.indent()
+        
+        if elsifNode.elsifBody != nil and elsifNode.elsifBody.kind == nkBlock:
+          for stmt in elsifNode.elsifBody.blockStmts:
+            g.generateNode(stmt)
+        
+        g.unindent()
+        g.write("}")
+  
+  # Генерируем else ветку
+  if node.ifElse != nil:
+    g.writeln(" else {{")
+    g.indent()
+    
+    if node.ifElse.kind == nkBlock:
+      for stmt in node.ifElse.blockStmts:
+        g.generateNode(stmt)
+    
+    g.unindent()
+    g.writeln("}")
+  else:
+    g.writeln("")
 
 proc generateNode(g: var CodeGenerator, node: Node) =
   case node.kind
@@ -381,14 +308,12 @@ proc generateNode(g: var CodeGenerator, node: Node) =
     g.generateFunctionDecl(node)
   of nkFunctionCall:
     g.generateFunctionCall(node)
-  of nkIfStatement:
-    g.generateIfStatement(node)
   of nkReturn:
     g.generateReturn(node)
+  of nkIf:  # Добавляем обработку if
+    g.generateIfStatement(node)
   else:
     g.state.error(&"Неподдерживаемый узел AST: {node.kind}", node.line, node.column)
-
-
 
 proc generateCode*(g: var CodeGenerator, ast: Node): string =
   ## Генерирует C-код из AST с уникальными именами для всех функций
@@ -457,8 +382,7 @@ proc generateCode*(g: var CodeGenerator, ast: Node): string =
   g.writeln("  int: __int_to_str, \\")
   g.writeln("  double: __float_to_str, \\")
   g.writeln("  bool: __bool_to_str, \\")
-  g.writeln("  char*: __str_to_str, \\")
-  g.writeln("  const char*: __str_to_str \\")
+  g.writeln("  char*: __str_to_str \\")
   g.writeln(")(x)")
   g.writeln("")
   
@@ -511,8 +435,6 @@ proc generateCode*(g: var CodeGenerator, ast: Node): string =
   g.writeln("}")
   
   return g.output
-
-
 
 proc initCodeGenerator*(): CodeGenerator =
   CodeGenerator(

@@ -3,8 +3,6 @@
 import strutils, os
 import ./types
 
-
-
 proc loadConfig*(filename: string): ProjectConfig =
   ## Загрузить конфигурацию проекта
   try:

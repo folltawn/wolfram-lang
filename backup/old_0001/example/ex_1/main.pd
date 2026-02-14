@@ -1,0 +1,15 @@
+func::name(): static {
+    int x = 15;
+    sendln(x);
+    return x;
+}
+
+func::main() {
+    sendln("d");
+    return 0;
+}
+
+int y = name();
+sendln("{{y}}а"); // sendln(x), sendln("{{y}}a") -> 15, 15a
+
+// вывод: d 15 15a
