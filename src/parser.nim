@@ -342,7 +342,8 @@ proc expectPeek(p: var Parser, kind: TokenKind): bool =
       of tkEqEq: "'=='"
       else: $kind
     
-    p.state.error(&"Missing {expected}", p.peekToken.line, p.peekToken.column)
+    p.state.addErrorExpected(expected, p.peekToken.literal, 
+                             p.peekToken.line, p.peekToken.column)
     return false
 
 
