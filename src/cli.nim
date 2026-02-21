@@ -1,7 +1,9 @@
 # src/cli.nim
 ## CLI интерфейс для компилятора PD
 
-import os, strutils, strformat, osproc, times, tables
+import os, strutils, strformat, os
+
+proc, times, tables
 import ./types, ./errors, ./parser, ./compiler, ./config
 
 const
@@ -44,11 +46,15 @@ const
 # Кэш для скомпилированных программ
 var compileCache = initTable[string, (string, Time)]()
 
+
+
 proc getProgramArgs(startIdx: int): seq[string] =
   ## Получить аргументы для запускаемой программы
   result = @[]
   for i in startIdx..paramCount():
     result.add(paramStr(i))
+
+
 
 proc parseFile(filename: string) =
   ## Парсить файл и вывести AST
@@ -64,7 +70,9 @@ proc parseFile(filename: string) =
     echo "AST дерево:"
     echo "==========="
     
-    proc printNode(node: Node, depth: int = 0) =
+    
+
+proc printNode(node: Node, depth: int = 0) =
       let indent = "  ".repeat(depth)
       case node.kind
       of nkProgram:
@@ -112,6 +120,8 @@ proc parseFile(filename: string) =
     echo &"Ошибка: Не удалось прочитать файл {filename}"
     quit(1)
 
+
+
 proc debugFile(filename: string) =
   ## Проверить файл на ошибки
   try:
@@ -133,6 +143,8 @@ proc debugFile(filename: string) =
   except IOError:
     echo &"Ошибка: Не удалось прочитать файл {filename}"
     quit(1)
+
+
 
 proc compileFile(filename: string): string =
   if not filename.toLowerAscii.endsWith(".pd"):
@@ -159,12 +171,16 @@ proc compileFile(filename: string): string =
     echo &"Ошибка: Не удалось прочитать файл {filename}"
     quit(1)
 
+
+
 proc isValidPdFile(filename: string): bool =
   ## Проверяет, является ли файл исходным кодом Palladium (.pd)
   let ext = splitFile(filename).ext.toLowerAscii
   return ext == ".pd"
 
 # В runFile:
+
+
 proc runFile(filename: string, args: seq[string] = @[]) =
   ## Скомпилировать и запустить .pd файл
   
@@ -257,6 +273,8 @@ proc runFile(filename: string, args: seq[string] = @[]) =
   echo &"Программа завершилась с кодом: {runExitCode}"
   echo "=".repeat(60)
 
+
+
 proc buildProject(configFile: string) =
   ## Собрать проект по конфигурации
   let config = loadConfig(configFile)
@@ -290,6 +308,8 @@ proc buildProject(configFile: string) =
     else:
       echo &"Ошибка: Файл не найден: {file}"
 
+
+
 proc cleanupCache() =
   ## Очистить кэш скомпилированных программ
   let tempDir = getTempDir() / "pd_run"
@@ -300,12 +320,16 @@ proc cleanupCache() =
     except:
       echo "Не удалось очистить кэш"
 
+
+
 proc showVersion() =
   ## Показать версию с дополнительной информацией
   echo &"Palladium Compiler v{Version}"
   echo "Nim Version: ", NimVersion
   echo "Platform: ", hostOS, " ", hostCPU
   echo "Build: ", CompileDate, " ", CompileTime
+
+
 
 proc handleCommand*() =
   ## Обработать команду CLI

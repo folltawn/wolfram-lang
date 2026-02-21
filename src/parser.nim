@@ -21,19 +21,31 @@ type
 # Forward declarations
 
 
+
+
 proc parseFunctionCall(p: var Parser): Node
+
+
 
 
 proc parseReturnStatement(p: var Parser): Node
 
 
+
+
 proc parseFunctionDecl(p: var Parser): Node
+
+
 
 
 proc parseStatement(p: var Parser): Node
 
 
+
+
 proc parseIfStatement(p: var Parser): Node
+
+
 
 
 proc parseExpression(p: var Parser): Node
@@ -52,15 +64,23 @@ const Keywords = {
 # Вспомогательные процедуры
 
 
+
+
 proc isLetter(ch: char): bool = ch in {'a'..'z', 'A'..'Z', '_'}
+
+
 
 
 proc isDigit(ch: char): bool = ch in {'0'..'9'}
 
 
+
+
 proc isWhitespace(ch: char): bool = ch in {' ', '\t', '\r', '\n'}
 
 # Лексер
+
+
 
 
 proc readChar(l: var Lexer) =
@@ -80,11 +100,15 @@ proc readChar(l: var Lexer) =
 
 
 
+
+
 proc initLexer*(input: string): Lexer =
   result.input = input
   result.line = 1
   result.column = 0
   result.readChar()
+
+
 
 
 
@@ -95,9 +119,13 @@ proc peekChar(l: Lexer): char =
 
 
 
+
+
 proc skipWhitespace(l: var Lexer) =
   while isWhitespace(l.ch):
     l.readChar()
+
+
 
 
 
@@ -106,6 +134,8 @@ proc readIdentifier(l: var Lexer): string =
   while isLetter(l.ch) or isDigit(l.ch):
     l.readChar()
   l.input[start..<l.position]
+
+
 
 
 
@@ -128,6 +158,8 @@ proc readNumber(l: var Lexer): (string, TokenKind) =
 
 
 
+
+
 proc readString(l: var Lexer): string =
   l.readChar() # пропускаем открывающую кавычку
   let start = l.position
@@ -140,6 +172,8 @@ proc readString(l: var Lexer): string =
   let str = l.input[start..<l.position]
   l.readChar() # пропускаем закрывающую кавычку
   return str
+
+
 
 
 
@@ -270,6 +304,8 @@ proc nextToken*(l: var Lexer): Token =
 # Парсер
 
 
+
+
 proc newParser*(input: string, filename: string = ""): Parser =
   var p: Parser
   p.lexer = initLexer(input)
@@ -280,10 +316,14 @@ proc newParser*(input: string, filename: string = ""): Parser =
 
 
 
+
+
 proc nextToken(p: var Parser) =
   echo "nextToken: from ", p.curToken.kind, " to ", p.peekToken.kind
   p.curToken = p.peekToken
   p.peekToken = p.lexer.nextToken()
+
+
 
 
 
@@ -304,6 +344,8 @@ proc expectPeek(p: var Parser, kind: TokenKind): bool =
     
     p.state.error(&"Missing {expected}", p.peekToken.line, p.peekToken.column)
     return false
+
+
 
 
 
@@ -333,6 +375,8 @@ proc parseType(p: var Parser): (WolframType, bool) =
       return (typ, false)
   
   return (typ, isConst)
+
+
 
 
 
@@ -406,6 +450,8 @@ proc parseStringInterpolation(p: var Parser, strValue: string): Node =
 
 
 
+
+
 proc parseLiteral(p: var Parser): Node =
   echo "parseLiteral: ", p.curToken.kind, " ", p.curToken.literal
   let node = Node(kind: nkLiteral, line: p.curToken.line, column: p.curToken.column)
@@ -437,6 +483,8 @@ proc parseLiteral(p: var Parser): Node =
 
 
 
+
+
 proc parseIdentifier(p: var Parser): Node =
   result = Node(
     kind: nkIdentifier,
@@ -445,6 +493,8 @@ proc parseIdentifier(p: var Parser): Node =
     identName: p.curToken.literal
   )
   p.nextToken()
+
+
 
 
 
@@ -473,6 +523,8 @@ proc parseBinaryExpr(p: var Parser, left: Node, precedence: int): Node =
 
 
 
+
+
 proc parseExpression(p: var Parser): Node =
   echo "parseExpression start: ", p.curToken.kind, " ", p.curToken.literal
   var left: Node
@@ -497,6 +549,8 @@ proc parseExpression(p: var Parser): Node =
   
   echo "No binary op, returning left"
   return left
+
+
 
 
 
@@ -547,6 +601,8 @@ proc parseVarDecl(p: var Parser): Node =
 
 
 
+
+
 proc parseAssignment(p: var Parser): Node =
   let line = p.curToken.line
   let column = p.curToken.column
@@ -571,6 +627,8 @@ proc parseAssignment(p: var Parser): Node =
     assignName: name,
     assignValue: value
   )
+
+
 
 
 
@@ -601,6 +659,8 @@ proc parseSendln(p: var Parser): Node =
     column: column,
     sendlnArg: arg
   )
+
+
 
 
 
@@ -666,6 +726,8 @@ proc parseRefactor(p: var Parser): Node =
   )
   
   return node
+
+
 
 
 
@@ -815,6 +877,8 @@ proc parseIfStatement(p: var Parser): Node =
 
 
 
+
+
 proc parseFunctionCall(p: var Parser): Node =
   ## Парсит вызов функции: name()
   let line = p.curToken.line
@@ -834,6 +898,8 @@ proc parseFunctionCall(p: var Parser): Node =
     column: column,
     callName: name
   )
+
+
 
 
 
@@ -859,6 +925,8 @@ proc parseReturnStatement(p: var Parser): Node =
     column: column,
     returnValue: returnValue
   )
+
+
 
 
 
@@ -931,6 +999,8 @@ proc parseFunctionDecl(p: var Parser): Node =
 
 
 
+
+
 proc parseStatement(p: var Parser): Node =
   echo "parseStatement: ", p.curToken.kind, " ", p.curToken.literal
   case p.curToken.kind
@@ -960,6 +1030,8 @@ proc parseStatement(p: var Parser): Node =
     p.state.error(&"Недопустимое выражение: {p.curToken.kind}", 
                   p.curToken.line, p.curToken.column)
     return nil
+
+
 
 
 

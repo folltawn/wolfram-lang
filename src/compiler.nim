@@ -15,7 +15,11 @@ type
 # Forward declaration
 
 
+
+
 proc generateNode(g: var CodeGenerator, node: Node)
+
+
 
 
 
@@ -25,8 +29,12 @@ proc getTempVar(g: var CodeGenerator): string =
 
 
 
+
+
 proc indent(g: var CodeGenerator) =
   g.indentLevel += 1
+
+
 
 
 
@@ -35,8 +43,12 @@ proc unindent(g: var CodeGenerator) =
 
 
 
+
+
 proc write(g: var CodeGenerator, text: string) =
   g.output.add(text)
+
+
 
 
 
@@ -48,6 +60,8 @@ proc writeln(g: var CodeGenerator, text: string = "") =
 
 
 
+
+
 proc typeToCType(t: WolframType): string =
   case t
   of wtInt: "int"
@@ -56,6 +70,8 @@ proc typeToCType(t: WolframType): string =
   of wtString: "char*"
   of wtVoid: "void"
   else: "void*"
+
+
 
 
 
@@ -72,12 +88,16 @@ proc escapeString(s: string): string =
 
 
 
+
+
 proc generateIdentifier(g: var CodeGenerator, identName: string): string =
   ## Генерирует имя переменной с учетом преобразований типов
   if identName in g.typeMap:
     return g.typeMap[identName]
   else:
     return identName
+
+
 
 
 
@@ -89,6 +109,8 @@ proc generateLiteral(g: var CodeGenerator, node: Node): string =
   of wtString: 
     &"\"{escapeString(node.litValue)}\""
   else: "NULL"
+
+
 
 
 
@@ -120,6 +142,8 @@ proc generateStringInterpolationPart(g: var CodeGenerator, part: Node): string =
 
 
 
+
+
 proc generateStringInterpolation(g: var CodeGenerator, node: Node): string =
   if node.interpParts.len == 0:
     return "\"\""  # Пустая строка
@@ -138,6 +162,8 @@ proc generateStringInterpolation(g: var CodeGenerator, node: Node): string =
       g.writeln(&"strcat({bufVar}, {partCode});")
   
   return bufVar
+
+
 
 
 
@@ -180,6 +206,8 @@ proc generateExpression(g: var CodeGenerator, node: Node): string =
 
 
 
+
+
 proc generateSendln(g: var CodeGenerator, node: Node) =
   let arg = node.sendlnArg
   
@@ -210,6 +238,8 @@ proc generateSendln(g: var CodeGenerator, node: Node) =
 
 
 
+
+
 proc generateVarDecl(g: var CodeGenerator, node: Node) =
   let ctype = typeToCType(node.declType)
   let value = g.generateExpression(node.declValue)
@@ -221,10 +251,14 @@ proc generateVarDecl(g: var CodeGenerator, node: Node) =
 
 
 
+
+
 proc generateAssignment(g: var CodeGenerator, node: Node) =
   let target = g.generateIdentifier(node.assignName)
   let value = g.generateExpression(node.assignValue)
   g.writeln(&"{target} = {value};")
+
+
 
 
 
@@ -261,6 +295,8 @@ proc generateRefactor(g: var CodeGenerator, node: Node) =
 
 
 
+
+
 proc generateFunctionDecl(g: var CodeGenerator, node: Node) =
   ## Генерирует код для объявления функции
   let userFuncName = node.funcName
@@ -290,6 +326,8 @@ proc generateFunctionDecl(g: var CodeGenerator, node: Node) =
 
 
 
+
+
 proc generateFunctionCall(g: var CodeGenerator, node: Node) =
   ## Генерирует код для вызова функции с учетом переименования
   let userFuncName = node.callName
@@ -303,6 +341,8 @@ proc generateFunctionCall(g: var CodeGenerator, node: Node) =
 
 
 
+
+
 proc generateReturn(g: var CodeGenerator, node: Node) =
   ## Генерирует код для return
   if node.returnValue != nil:
@@ -312,6 +352,8 @@ proc generateReturn(g: var CodeGenerator, node: Node) =
     g.writeln("return;")
 
 # Добавь новую процедуру:
+
+
 
 
 proc generateIfStatement(g: var CodeGenerator, node: Node) =
@@ -367,6 +409,8 @@ proc generateIfStatement(g: var CodeGenerator, node: Node) =
 
 
 
+
+
 proc generateNode(g: var CodeGenerator, node: Node) =
   case node.kind
   of nkVarDecl, nkConstDecl:
@@ -387,6 +431,8 @@ proc generateNode(g: var CodeGenerator, node: Node) =
     g.generateReturn(node)
   else:
     g.state.error(&"Неподдерживаемый узел AST: {node.kind}", node.line, node.column)
+
+
 
 
 
@@ -511,6 +557,8 @@ proc generateCode*(g: var CodeGenerator, ast: Node): string =
   g.writeln("}")
   
   return g.output
+
+
 
 
 

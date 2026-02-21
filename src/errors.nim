@@ -26,6 +26,8 @@ type
     source*: string
     filename*: string
 
+
+
 proc initCompilerState*(source: string = "", filename: string = ""): CompilerState =
   CompilerState(
     errors: @[],
@@ -33,6 +35,8 @@ proc initCompilerState*(source: string = "", filename: string = ""): CompilerSta
     source: source,
     filename: filename
   )
+
+
 
 proc getSourceLine(state: CompilerState, line: int): string =
   if state.source.len == 0 or line < 1:
@@ -42,6 +46,8 @@ proc getSourceLine(state: CompilerState, line: int): string =
   if line <= lines.len:
     return lines[line-1]
   return ""
+
+
 
 proc prettyError*(state: CompilerState, err: CompileError): string =
   let 
@@ -90,6 +96,8 @@ proc prettyError*(state: CompilerState, err: CompileError): string =
   # Пустая строка внизу (серым)
   result.add &"{Gray}{indent}│{Reset}\n"
 
+
+
 proc error*(state: var CompilerState, message: string, line = 0, column = 0) =
   let err = CompileError(
     msg: message,
@@ -99,6 +107,8 @@ proc error*(state: var CompilerState, message: string, line = 0, column = 0) =
     sourceLine: state.getSourceLine(line)
   )
   state.errors.add(err)
+
+
 
 proc warning*(state: var CompilerState, message: string, line = 0, column = 0) =
   let warn = CompileWarning(
@@ -110,8 +120,12 @@ proc warning*(state: var CompilerState, message: string, line = 0, column = 0) =
   )
   state.warnings.add(warn)
 
+
+
 proc hasErrors*(state: CompilerState): bool =
   state.errors.len > 0
+
+
 
 proc showErrors*(state: CompilerState) =
   if state.errors.len == 0:
