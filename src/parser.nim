@@ -71,11 +71,12 @@ proc readChar(l: var Lexer) =
   
   l.position = l.readPosition
   l.readPosition += 1
-  l.column += 1
   
   if l.ch == '\n':
     l.line += 1
     l.column = 0
+  else:
+    l.column += 1
 
 
 
@@ -96,9 +97,6 @@ proc peekChar(l: Lexer): char =
 
 proc skipWhitespace(l: var Lexer) =
   while isWhitespace(l.ch):
-    if l.ch == '\n':
-      l.line += 1
-      l.column = 0
     l.readChar()
 
 
@@ -394,7 +392,7 @@ proc parseStringInterpolation(p: var Parser, strValue: string): Node =
   if parts.len == 1 and parts[0].kind == nkLiteral:
     # Если только текст без интерполяции, возвращаем просто литерал
     result = parts[0]
-    p.nextToken()  # <-- ДОБАВЬ
+    p.nextToken()
     return result
   else:
     result = Node(
@@ -403,7 +401,7 @@ proc parseStringInterpolation(p: var Parser, strValue: string): Node =
       column: column,
       interpParts: parts
     )
-    p.nextToken()  # <-- И СЮДА
+    p.nextToken()
     return result
 
 
@@ -531,9 +529,8 @@ proc parseVarDecl(p: var Parser): Node =
   
   # Точка с запятой
   if p.peekToken.kind == tkSemi:
-    p.nextToken()  # пропускаем ;
+    p.nextToken()
   else:
-    # Если нет ; - это нормально, просто продолжаем
     discard
   
   # Создаем узел
@@ -688,10 +685,6 @@ proc parseIfStatement(p: var Parser): Node =
   echo "After parseExpression, token: ", p.curToken.kind, " literal: ", p.curToken.literal
   if condition == nil:
     return nil
-  
-  # Проверяем закрывающую скобку
-  # if not p.expectPeek(tkRParen):
-  #   return nil
   
   # Проверяем открывающую фигурную скобку
   if not p.expectPeek(tkLBrace):
