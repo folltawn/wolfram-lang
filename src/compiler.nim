@@ -13,44 +13,20 @@ type
     funcMap*: Table[string, string]
 
 # Forward declaration
-
-
-
-
 proc generateNode(g: var CodeGenerator, node: Node)
-
-
-
-
 
 proc getTempVar(g: var CodeGenerator): string =
   g.tempCounter += 1
   result = &"__temp_{g.tempCounter}"
 
-
-
-
-
 proc indent(g: var CodeGenerator) =
   g.indentLevel += 1
-
-
-
-
 
 proc unindent(g: var CodeGenerator) =
   g.indentLevel -= 1
 
-
-
-
-
 proc write(g: var CodeGenerator, text: string) =
   g.output.add(text)
-
-
-
-
 
 proc writeln(g: var CodeGenerator, text: string = "") =
   if text.len > 0:
@@ -58,11 +34,7 @@ proc writeln(g: var CodeGenerator, text: string = "") =
   else:
     g.output.add("\n")
 
-
-
-
-
-proc typeToCType(t: WolframType): string =
+proc typeToCType(t: PalladiumType): string =
   case t
   of wtInt: "int"
   of wtFloat: "double"
@@ -70,10 +42,6 @@ proc typeToCType(t: WolframType): string =
   of wtString: "char*"
   of wtVoid: "void"
   else: "void*"
-
-
-
-
 
 proc escapeString(s: string): string =
   result = newStringOfCap(s.len * 2)
@@ -86,20 +54,12 @@ proc escapeString(s: string): string =
     of '\r': result.add("\\r")
     else: result.add(ch)
 
-
-
-
-
 proc generateIdentifier(g: var CodeGenerator, identName: string): string =
   ## Генерирует имя переменной с учетом преобразований типов
   if identName in g.typeMap:
     return g.typeMap[identName]
   else:
     return identName
-
-
-
-
 
 proc generateLiteral(g: var CodeGenerator, node: Node): string =
   case node.litType
@@ -109,10 +69,6 @@ proc generateLiteral(g: var CodeGenerator, node: Node): string =
   of wtString: 
     &"\"{escapeString(node.litValue)}\""
   else: "NULL"
-
-
-
-
 
 proc generateStringInterpolationPart(g: var CodeGenerator, part: Node): string =
   case part.kind
@@ -136,13 +92,9 @@ proc generateStringInterpolationPart(g: var CodeGenerator, part: Node): string =
       &"__to_str({varName})"
   
   else:
-    g.state.error(&"Неподдерживаемый элемент интерполяции: {part.kind}", 
-                  part.line, part.column)
+    g.state.addError(errUnsupportedExpression, part.line, part.column,
+                     found = $part.kind)
     "\"\""
-
-
-
-
 
 proc generateStringInterpolation(g: var CodeGenerator, node: Node): string =
   if node.interpParts.len == 0:
@@ -163,14 +115,10 @@ proc generateStringInterpolation(g: var CodeGenerator, node: Node): string =
   
   return bufVar
 
-
-
-
-
 proc generateExpression(g: var CodeGenerator, node: Node): string =
   case node.kind
   of nkLiteral:
-    result = g.generateLiteral(node)  # <-- присвой результат
+    result = g.generateLiteral(node)
   of nkIdentifier:
     result = g.generateIdentifier(node.identName)
   of nkStringInterpolation:
@@ -179,7 +127,8 @@ proc generateExpression(g: var CodeGenerator, node: Node): string =
     if node.callName in g.funcMap:
       result = g.funcMap[node.callName] & "()"
     else:
-      g.state.error(&"Неизвестная функция: {node.callName}", node.line, node.column)
+      g.state.addError(errUnknownFunction, node.line, node.column,
+                       found = node.callName)
       result = "/* ошибка */"
   of nkBinaryExpr:
     let left = g.generateExpression(node.left)
@@ -197,18 +146,17 @@ proc generateExpression(g: var CodeGenerator, node: Node): string =
       of tkSlash: "/"
       of tkPercent: "%"
       else:
-        g.state.error(&"Неподдерживаемый оператор: {node.op}", node.line, node.column)
+        g.state.addError(errUnsupportedOperator, node.line, node.column,
+                         found = $node.op)
         "???"
     result = &"({left} {op} {right})"
   else:
-    g.state.error(&"Неподдерживаемое выражение: {node.kind}", node.line, node.column)
+    g.state.addError(errUnsupportedExpression, node.line, node.column,
+                     found = $node.kind)
     result = ""
 
-
-
-
-
 proc generateSendln(g: var CodeGenerator, node: Node) =
+  echo "sendln at line: ", node.line, " col: ", node.column
   let arg = node.sendlnArg
   
   case arg.kind
@@ -236,10 +184,6 @@ proc generateSendln(g: var CodeGenerator, node: Node) =
   else:
     g.writeln(&"printf(\"%s\\n\", {g.generateExpression(arg)});")
 
-
-
-
-
 proc generateVarDecl(g: var CodeGenerator, node: Node) =
   let ctype = typeToCType(node.declType)
   let value = g.generateExpression(node.declValue)
@@ -249,18 +193,10 @@ proc generateVarDecl(g: var CodeGenerator, node: Node) =
   else:
     g.writeln(&"{ctype} {node.declName} = {value};")
 
-
-
-
-
 proc generateAssignment(g: var CodeGenerator, node: Node) =
   let target = g.generateIdentifier(node.assignName)
   let value = g.generateExpression(node.assignValue)
   g.writeln(&"{target} = {value};")
-
-
-
-
 
 proc generateRefactor(g: var CodeGenerator, node: Node) =
   let target = node.refactorTarget.identName
@@ -290,12 +226,8 @@ proc generateRefactor(g: var CodeGenerator, node: Node) =
     let varName = g.generateIdentifier(target)
     g.writeln(&"{varName} = (bool){varName};")
   else:
-    g.state.error(&"Неподдерживаемое преобразование типа: {node.refactorToType}", 
-                  node.line, node.column)
-
-
-
-
+    g.state.addError(errInvalidRefactorType, node.line, node.column,
+                     found = $node.refactorToType)
 
 proc generateFunctionDecl(g: var CodeGenerator, node: Node) =
   ## Генерирует код для объявления функции
@@ -324,10 +256,6 @@ proc generateFunctionDecl(g: var CodeGenerator, node: Node) =
   g.writeln("}")
   g.writeln("")
 
-
-
-
-
 proc generateFunctionCall(g: var CodeGenerator, node: Node) =
   ## Генерирует код для вызова функции с учетом переименования
   let userFuncName = node.callName
@@ -337,11 +265,8 @@ proc generateFunctionCall(g: var CodeGenerator, node: Node) =
     # Используем безопасное имя из map
     g.writeln(&"  {g.funcMap[userFuncName]}();")
   else:
-    g.state.error(&"Неизвестная функция: {userFuncName}", node.line, node.column)
-
-
-
-
+    g.state.addError(errUnknownFunction, node.line, node.column,
+                     found = userFuncName)
 
 proc generateReturn(g: var CodeGenerator, node: Node) =
   ## Генерирует код для return
@@ -350,11 +275,6 @@ proc generateReturn(g: var CodeGenerator, node: Node) =
     g.writeln(&"return {value};")
   else:
     g.writeln("return;")
-
-# Добавь новую процедуру:
-
-
-
 
 proc generateIfStatement(g: var CodeGenerator, node: Node) =
   ## Генерирует C-код для if-elsif-else
@@ -407,10 +327,6 @@ proc generateIfStatement(g: var CodeGenerator, node: Node) =
       # Неизвестный тип
       currentElse = nil
 
-
-
-
-
 proc generateNode(g: var CodeGenerator, node: Node) =
   case node.kind
   of nkVarDecl, nkConstDecl:
@@ -430,14 +346,15 @@ proc generateNode(g: var CodeGenerator, node: Node) =
   of nkReturn:
     g.generateReturn(node)
   else:
-    g.state.error(&"Неподдерживаемый узел AST: {node.kind}", node.line, node.column)
-
-
-
-
+    g.state.addError(errUnsupportedNode, node.line, node.column,
+                     found = $node.kind)
 
 proc generateCode*(g: var CodeGenerator, ast: Node): string =
   ## Генерирует C-код из AST с уникальными именами для всех функций
+  
+  # Проверяем наличие ошибок перед генерацией
+  if g.state.hasErrors():
+    return ""
   
   g.tempCounter = 0
   g.funcMap.clear()
@@ -558,15 +475,12 @@ proc generateCode*(g: var CodeGenerator, ast: Node): string =
   
   return g.output
 
-
-
-
-
 proc initCodeGenerator*(): CodeGenerator =
   CodeGenerator(
     output: "", 
     indentLevel: 0,
     state: CompilerState(),
     typeMap: initTable[string, string](),
-    tempCounter: 0
+    tempCounter: 0,
+    funcMap: initTable[string, string]()
   )

@@ -2,7 +2,7 @@
 
 type
   # Типы данных PD
-  WolframType* = enum
+  PalladiumType* = enum
     wtInt = "int"
     wtFloat = "float"
     wtBool = "bool"
@@ -63,7 +63,7 @@ type
     
     of nkVarDecl, nkConstDecl:
       declName*: string
-      declType*: WolframType
+      declType*: PalladiumType
       declValue*: Node
     
     of nkStringInterpolation:
@@ -82,7 +82,7 @@ type
       unaryExpr*: Node
     
     of nkLiteral:
-      litType*: WolframType
+      litType*: PalladiumType
       litValue*: string
     
     of nkIdentifier:
@@ -93,7 +93,7 @@ type
     
     of nkRefactor:
       refactorTarget*: Node
-      refactorToType*: WolframType
+      refactorToType*: PalladiumType
       refactorValue*: Node
     
     of nkBlock:

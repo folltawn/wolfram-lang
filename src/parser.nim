@@ -19,36 +19,13 @@ type
     state*: CompilerState
 
 # Forward declarations
-
-
-
-
 proc parseFunctionCall(p: var Parser): Node
-
-
-
-
 proc parseReturnStatement(p: var Parser): Node
-
-
-
-
 proc parseFunctionDecl(p: var Parser): Node
-
-
-
-
 proc parseStatement(p: var Parser): Node
-
-
-
-
 proc parseIfStatement(p: var Parser): Node
-
-
-
-
 proc parseExpression(p: var Parser): Node
+proc nextToken(p: var Parser)
 
 # Ключевые слова
 const Keywords = {
@@ -62,27 +39,11 @@ const Keywords = {
 }.toTable
 
 # Вспомогательные процедуры
-
-
-
-
 proc isLetter(ch: char): bool = ch in {'a'..'z', 'A'..'Z', '_'}
-
-
-
-
 proc isDigit(ch: char): bool = ch in {'0'..'9'}
-
-
-
-
 proc isWhitespace(ch: char): bool = ch in {' ', '\t', '\r', '\n'}
 
 # Лексер
-
-
-
-
 proc readChar(l: var Lexer) =
   if l.readPosition >= l.input.len:
     l.ch = '\0'
@@ -98,46 +59,29 @@ proc readChar(l: var Lexer) =
   else:
     l.column += 1
 
-
-
-
-
 proc initLexer*(input: string): Lexer =
   result.input = input
   result.line = 1
   result.column = 0
   result.readChar()
 
-
-
-
-
 proc peekChar(l: Lexer): char =
   if l.readPosition >= l.input.len:
     return '\0'
   return l.input[l.readPosition]
 
-
-
-
-
 proc skipWhitespace(l: var Lexer) =
   while isWhitespace(l.ch):
+    if l.ch == '\n':
+      l.line += 1
+      l.column = 0
     l.readChar()
-
-
-
-
 
 proc readIdentifier(l: var Lexer): string =
   let start = l.position
   while isLetter(l.ch) or isDigit(l.ch):
     l.readChar()
-  l.input[start..<l.position]
-
-
-
-
+  result = l.input[start..<l.position]
 
 proc readNumber(l: var Lexer): (string, TokenKind) =
   let start = l.position
@@ -156,10 +100,6 @@ proc readNumber(l: var Lexer): (string, TokenKind) =
   else:
     return (num, tkInt)
 
-
-
-
-
 proc readString(l: var Lexer): string =
   l.readChar() # пропускаем открывающую кавычку
   let start = l.position
@@ -169,13 +109,8 @@ proc readString(l: var Lexer): string =
       l.readChar() # пропускаем escape-символ
     l.readChar()
   
-  let str = l.input[start..<l.position]
+  result = l.input[start..<l.position]
   l.readChar() # пропускаем закрывающую кавычку
-  return str
-
-
-
-
 
 proc nextToken*(l: var Lexer): Token =
   l.skipWhitespace()
@@ -216,7 +151,7 @@ proc nextToken*(l: var Lexer): Token =
       # Пропускаем однострочные комментарии
       while l.ch != '\n' and l.ch != '\0':
         l.readChar()
-      return l.nextToken()  # Возвращаем следующий токен после комментария
+      return l.nextToken()
     else:
       token.kind = tkSlash
       token.literal = "/"
@@ -302,10 +237,6 @@ proc nextToken*(l: var Lexer): Token =
   return token
 
 # Парсер
-
-
-
-
 proc newParser*(input: string, filename: string = ""): Parser =
   var p: Parser
   p.lexer = initLexer(input)
@@ -314,18 +245,9 @@ proc newParser*(input: string, filename: string = ""): Parser =
   p.state = initCompilerState(input, filename)
   return p
 
-
-
-
-
 proc nextToken(p: var Parser) =
-  echo "nextToken: from ", p.curToken.kind, " to ", p.peekToken.kind
   p.curToken = p.peekToken
   p.peekToken = p.lexer.nextToken()
-
-
-
-
 
 proc expectPeek(p: var Parser, kind: TokenKind): bool =
   if p.peekToken.kind == kind:
@@ -346,43 +268,39 @@ proc expectPeek(p: var Parser, kind: TokenKind): bool =
                              p.peekToken.line, p.peekToken.column)
     return false
 
+proc expectSemicolon(p: var Parser, line: int, column: int) =
+  if p.curToken.kind == tkSemi:
+    p.nextToken()
+  else:
+    p.state.addError(errMissingSemicolon, line, column, found = p.curToken.literal)
 
-
-
-
-proc parseType(p: var Parser): (WolframType, bool) =
-  var typ: WolframType
+proc parseType(p: var Parser): (PalladiumType, bool) =
+  var typ: PalladiumType
   var isConst = false
   
-  # Определяем тип по TokenKind
   case p.curToken.kind
   of tkTypeInt: typ = wtInt
   of tkTypeFloat: typ = wtFloat
   of tkTypeBool: typ = wtBool
   of tkTypeStr: typ = wtString
   else:
-    p.state.error(&"Неизвестный тип: {p.curToken.literal}", 
-                  p.curToken.line, p.curToken.column)
+    p.state.addError(errUnknownType, p.curToken.line, p.curToken.column, 
+                     found = p.curToken.literal)
     return (wtUnknown, false)
   
-  # Проверяем, есть ли модификатор ::const
   if p.peekToken.kind == tkColonColon:
-    p.nextToken() # Пропускаем ::
-    if p.expectPeek(tkConst):
+    p.nextToken()
+    if p.peekToken.kind == tkConst:
+      p.nextToken()
       isConst = true
     else:
-      p.state.error("Ожидался 'const' после '::'", 
-                    p.curToken.line, p.curToken.column)
+      p.state.addError(errMissingConst, p.curToken.line, p.curToken.column,
+                       found = p.peekToken.literal)
       return (typ, false)
   
   return (typ, isConst)
 
-
-
-
-
 proc parseStringInterpolation(p: var Parser, strValue: string): Node =
-  ## Парсит строку с интерполяцией типа "{{x}}!"
   let line = p.curToken.line
   let column = p.curToken.column
   
@@ -391,21 +309,18 @@ proc parseStringInterpolation(p: var Parser, strValue: string): Node =
   
   while i < strValue.len:
     if i + 1 < strValue.len and strValue[i] == '{' and strValue[i+1] == '{':
-      # Нашли начало интерполяции {{ 
-      i += 2  # Пропускаем {{
+      i += 2
       
-      # Ищем закрывающие }}
       var varStart = i
       while i < strValue.len and not (strValue[i] == '}' and i+1 < strValue.len and strValue[i+1] == '}'):
         i += 1
       
       if i >= strValue.len or not (strValue[i] == '}' and strValue[i+1] == '}'):
-        p.state.error("Незакрытая интерполяция строки", line, column)
+        p.state.addError(errUnclosedInterpolation, line, column)
         return nil
       
       let varName = strValue[varStart..<i].strip()
       
-      # Создаем узел для переменной
       let varNode = Node(
         kind: nkIdentifier,
         line: line,
@@ -414,9 +329,8 @@ proc parseStringInterpolation(p: var Parser, strValue: string): Node =
       )
       parts.add(varNode)
       
-      i += 2  # Пропускаем }}
+      i += 2
     else:
-      # Обычный текст
       var textStart = i
       while i < strValue.len and not (i+1 < strValue.len and strValue[i] == '{' and strValue[i+1] == '{'):
         i += 1
@@ -433,12 +347,8 @@ proc parseStringInterpolation(p: var Parser, strValue: string): Node =
           )
           parts.add(textNode)
   
-  # Создаем узел интерполяции
   if parts.len == 1 and parts[0].kind == nkLiteral:
-    # Если только текст без интерполяции, возвращаем просто литерал
     result = parts[0]
-    p.nextToken()
-    return result
   else:
     result = Node(
       kind: nkStringInterpolation,
@@ -446,45 +356,39 @@ proc parseStringInterpolation(p: var Parser, strValue: string): Node =
       column: column,
       interpParts: parts
     )
-    p.nextToken()
-    return result
-
-
-
-
 
 proc parseLiteral(p: var Parser): Node =
-  echo "parseLiteral: ", p.curToken.kind, " ", p.curToken.literal
   let node = Node(kind: nkLiteral, line: p.curToken.line, column: p.curToken.column)
   
   case p.curToken.kind
   of tkInt:
     node.litType = wtInt
     node.litValue = p.curToken.literal
+    p.nextToken()
   of tkFloat:
     node.litType = wtFloat
     node.litValue = p.curToken.literal
+    p.nextToken()
   of tkBool:
     node.litType = wtBool
     node.litValue = p.curToken.literal
+    p.nextToken()
   of tkString:
-    # Проверяем на интерполяцию
     if "{{" in p.curToken.literal:
-      return p.parseStringInterpolation(p.curToken.literal)
+      result = p.parseStringInterpolation(p.curToken.literal)
+      p.nextToken()
+      return result
     else:
       node.litType = wtString
       node.litValue = p.curToken.literal
+      p.nextToken()
   else:
-    p.state.error(&"Недопустимый литерал: {p.curToken.literal}", 
-                  p.curToken.line, p.curToken.column)
+    p.state.addError(errInvalidLiteral, p.curToken.line, p.curToken.column,
+                     found = p.curToken.literal)
+    p.nextToken()
     return nil
   
-  p.nextToken()
   return node
-
-
-
-
 
 proc parseIdentifier(p: var Parser): Node =
   result = Node(
@@ -495,10 +399,6 @@ proc parseIdentifier(p: var Parser): Node =
   )
   p.nextToken()
 
-
-
-
-
 proc parseBinaryExpr(p: var Parser, left: Node, precedence: int): Node =
   var left = left
   while true:
@@ -506,7 +406,7 @@ proc parseBinaryExpr(p: var Parser, left: Node, precedence: int): Node =
     if op notin {tkEqEq, tkNotEq, tkLt, tkGt, tkLtEq, tkGtEq, tkPlus, tkMinus, tkStar, tkSlash, tkPercent}:
       break
     
-    p.nextToken()  # переходим к правой части
+    p.nextToken()
     var right = p.parseExpression()
     if right == nil:
       return nil
@@ -522,12 +422,7 @@ proc parseBinaryExpr(p: var Parser, left: Node, precedence: int): Node =
   
   return left
 
-
-
-
-
 proc parseExpression(p: var Parser): Node =
-  echo "parseExpression start: ", p.curToken.kind, " ", p.curToken.literal
   var left: Node
   
   case p.curToken.kind
@@ -539,56 +434,47 @@ proc parseExpression(p: var Parser): Node =
     else:
       left = p.parseIdentifier()
   else:
-    p.state.error(&"Недопустимое выражение: {p.curToken.literal}", 
-                  p.curToken.line, p.curToken.column)
+    p.state.addError(errExpectedExpression, p.curToken.line, p.curToken.column,
+                     found = p.curToken.literal)
+    p.nextToken()
     return nil
   
-  echo "After left, curToken: ", p.curToken.kind, " ", p.curToken.literal
   if p.curToken.kind in {tkEqEq, tkNotEq, tkLt, tkGt, tkLtEq, tkGtEq, tkPlus, tkMinus, tkStar, tkSlash, tkPercent}:
-    echo "Found binary op: ", p.curToken.kind
     return p.parseBinaryExpr(left, 0)
   
-  echo "No binary op, returning left"
   return left
-
-
-
-
 
 proc parseVarDecl(p: var Parser): Node =
   let line = p.curToken.line
   let column = p.curToken.column
   
-  # Парсим тип и модификаторы (например, "str::const")
   let (typ, isConst) = p.parseType()
-  
   if typ == wtUnknown:
     return nil
   
-  # Имя переменной
-  if not p.expectPeek(tkIdent):
+  p.nextToken()  # переходим после типа
+  if p.curToken.kind != tkIdent:
+    p.state.addError(errExpectedIdentifier, p.curToken.line, p.curToken.column,
+                     found = p.curToken.literal)
     return nil
   
   let name = p.curToken.literal
+  p.nextToken()  # переходим после имени
   
-  # Знак равно
-  if not p.expectPeek(tkEq):
+  if p.curToken.kind != tkEq:
+    p.state.addError(errExpectedEq, p.curToken.line, p.curToken.column,
+                     found = p.curToken.literal)
     return nil
   
-  # Значение
-  p.nextToken() # переходим к значению
+  p.nextToken()  # переходим к значению
   let value = p.parseExpression()
-  
   if value == nil:
     return nil
   
-  # Точка с запятой
-  if p.peekToken.kind == tkSemi:
-    p.nextToken()
-  else:
-    discard
+  let valueLine = if value != nil: value.line else: line
+  let valueColumn = if value != nil: value.column else: column
+  p.expectSemicolon(valueLine, valueColumn)
   
-  # Создаем узел
   let node = if isConst:
     Node(kind: nkConstDecl, line: line, column: column)
   else:
@@ -600,26 +486,24 @@ proc parseVarDecl(p: var Parser): Node =
   
   return node
 
-
-
-
-
 proc parseAssignment(p: var Parser): Node =
   let line = p.curToken.line
   let column = p.curToken.column
   let name = p.curToken.literal
   
-  if not p.expectPeek(tkEq):
+  p.nextToken()  # переходим после имени
+  
+  if p.curToken.kind != tkEq:
+    p.state.addError(errExpectedEq, p.curToken.line, p.curToken.column,
+                     found = p.curToken.literal)
     return nil
   
-  p.nextToken() # переходим к значению
+  p.nextToken()  # переходим к значению
   let value = p.parseExpression()
-  
   if value == nil:
     return nil
   
-  if not p.expectPeek(tkSemi):
-    return nil
+  p.expectSemicolon(value.line, value.column)
   
   Node(
     kind: nkAssignment,
@@ -629,30 +513,34 @@ proc parseAssignment(p: var Parser): Node =
     assignValue: value
   )
 
-
-
-
-
 proc parseSendln(p: var Parser): Node =
   let line = p.curToken.line
   let column = p.curToken.column
   
-  if not p.expectPeek(tkLParen):  # переходим на (
+  p.nextToken()  # sendln
+  
+  if p.curToken.kind != tkLParen:
+    p.state.addError(errExpectedLParen, p.curToken.line, p.curToken.column,
+                     found = p.curToken.literal)
     return nil
   
-  p.nextToken()  # переходим на аргумент
+  p.nextToken()  # (
   
-  let arg = p.parseExpression()  # парсим аргумент
+  let exprLine = p.curToken.line
+  let exprColumn = p.curToken.column
   
+  let arg = p.parseExpression()
   if arg == nil:
     return nil
   
   if p.curToken.kind != tkRParen:
-    p.state.error("Ожидался токен )", p.curToken.line, p.curToken.column)
+    p.state.addError(errExpectedRParen, p.curToken.line, p.curToken.column,
+                     found = p.curToken.literal)
     return nil
   
-  if not p.expectPeek(tkSemi):  # ждем ;
-    return nil
+  p.nextToken()  # )
+  
+  p.expectSemicolon(exprLine, exprColumn)  # ← передаем позицию выражения
   
   Node(
     kind: nkSendln,
@@ -661,36 +549,41 @@ proc parseSendln(p: var Parser): Node =
     sendlnArg: arg
   )
 
-
-
-
-
 proc parseRefactor(p: var Parser): Node =
   let line = p.curToken.line
   let column = p.curToken.column
   
-  if not p.expectPeek(tkLParen):
+  p.nextToken()  # переходим после refactor
+  
+  if p.curToken.kind != tkLParen:
+    p.state.addError(errExpectedLParen, p.curToken.line, p.curToken.column,
+                     found = p.curToken.literal)
     return nil
   
-  p.nextToken() # переходим к целевой переменной
+  p.nextToken()  # переходим к цели
   let target = p.parseExpression()
-  
   if target == nil:
     return nil
   
-  if not p.expectPeek(tkRParen):
+  if p.curToken.kind != tkRParen:
+    p.state.addError(errExpectedRParen, p.curToken.line, p.curToken.column,
+                     found = p.curToken.literal)
     return nil
   
-  if not p.expectPeek(tkFatArrow):
+  p.nextToken()  # переходим после )
+  
+  if p.curToken.kind != tkFatArrow:
+    p.state.addError(errExpectedFatArrow, p.curToken.line, p.curToken.column,
+                     found = p.curToken.literal)
     return nil
   
-  # Просто получаем следующий токен и проверяем, что это тип
-  p.nextToken()
+  p.nextToken()  # переходим после =>
+  
   if p.curToken.kind notin {tkTypeInt, tkTypeFloat, tkTypeBool, tkTypeStr}:
-    p.state.error("Ожидался тип (int, float, bool, str)", p.curToken.line, p.curToken.column)
+    p.state.addError(errExpectedType, p.curToken.line, p.curToken.column,
+                     found = p.curToken.literal)
     return nil
   
-  # Определяем тип
   var toType = wtUnknown
   case p.curToken.kind
   of tkTypeInt: toType = wtInt
@@ -699,25 +592,33 @@ proc parseRefactor(p: var Parser): Node =
   of tkTypeStr: toType = wtString
   else: discard
   
-  # Проверяем, есть ли значение в скобках
-  var refactorValue: Node = nil
+  p.nextToken()  # переходим после типа
   
-  if p.peekToken.kind == tkLParen:
-    p.nextToken() # Пропускаем (
-    p.nextToken() # Переходим к значению
+  var refactorValue: Node = nil
+  var valueLine = line
+  var valueColumn = column
+  
+  if p.curToken.kind == tkLParen:
+    p.nextToken()  # переходим к значению
     refactorValue = p.parseExpression()
-    
     if refactorValue == nil:
       return nil
     
-    if not p.expectPeek(tkRParen):
+    if p.curToken.kind != tkRParen:
+      p.state.addError(errExpectedRParen, p.curToken.line, p.curToken.column,
+                       found = p.curToken.literal)
       return nil
+    
+    p.nextToken()  # переходим после )
+    valueLine = refactorValue.line
+    valueColumn = refactorValue.column
   
-  if not p.expectPeek(tkSemi):
-    return nil
+  if refactorValue != nil:
+    p.expectSemicolon(valueLine, valueColumn)
+  else:
+    p.expectSemicolon(target.line, target.column)
   
-  # Создаем узел
-  let node = Node(
+  Node(
     kind: nkRefactor,
     line: line,
     column: column,
@@ -725,50 +626,52 @@ proc parseRefactor(p: var Parser): Node =
     refactorToType: toType,
     refactorValue: refactorValue
   )
-  
-  return node
-
-
-
-
 
 proc parseIfStatement(p: var Parser): Node =
   let line = p.curToken.line
   let column = p.curToken.column
   
-  echo "parseIfStatement: current token before expectPeek: ", p.curToken.kind
-  if not p.expectPeek(tkLParen):
-    return nil
-  echo "parseIfStatement: current token after expectPeek: ", p.curToken.kind
+  p.nextToken()  # переходим после if
   
-  p.nextToken()
-
-  # Парсим условие
+  if p.curToken.kind != tkLParen:
+    p.state.addError(errExpectedLParen, p.curToken.line, p.curToken.column,
+                     found = p.curToken.literal)
+    return nil
+  
+  p.nextToken()  # переходим к условию
   let condition = p.parseExpression()
-  echo "After parseExpression, token: ", p.curToken.kind, " literal: ", p.curToken.literal
   if condition == nil:
     return nil
   
-  # Проверяем открывающую фигурную скобку
-  if not p.expectPeek(tkLBrace):
+  if p.curToken.kind != tkRParen:
+    p.state.addError(errExpectedRParen, p.curToken.line, p.curToken.column,
+                     found = p.curToken.literal)
+    return nil
+  
+  p.nextToken()  # переходим после )
+  
+  if p.curToken.kind != tkLBrace:
+    p.state.addError(errExpectedLBrace, p.curToken.line, p.curToken.column,
+                     found = p.curToken.literal)
     return nil
   
   p.nextToken()  # переходим к телу if
   
-  # Парсим тело if
   var thenBody: seq[Node] = @[]
   while p.curToken.kind != tkRBrace and p.curToken.kind != tkEOF:
     let stmt = p.parseStatement()
     if stmt != nil:
       thenBody.add(stmt)
-    p.nextToken()
   
-  # Проверяем закрывающую скобку if
   if p.curToken.kind != tkRBrace:
-    p.state.error("Ожидалась '}'", p.curToken.line, p.curToken.column)
+    p.state.addError(errExpectedRBrace, p.curToken.line, p.curToken.column,
+                     found = p.curToken.literal)
     return nil
   
-  # Создаем блок для then
+  # Берем реальную строку первого выражения в блоке
+  let thenBodyLine = if thenBody.len > 0: thenBody[0].line else: line
+  let thenBodyColumn = if thenBody.len > 0: thenBody[0].column else: column
+  
   let thenBlock = Node(
     kind: nkBlock,
     line: line,
@@ -776,122 +679,140 @@ proc parseIfStatement(p: var Parser): Node =
     blockStmts: thenBody
   )
   
-  # Проверяем, есть ли elsif или else
+  p.nextToken()  # переходим после }
+  
   var elseBlock: Node = nil
-  var currentLine = line
-  var currentColumn = column
   
-  p.nextToken()  # переходим к следующему токену после }
-  
-  # Обрабатываем цепочку elsif
+  # Обрабатываем elsif
   while p.curToken.kind == tkElsif:
-    currentLine = p.curToken.line
-    currentColumn = p.curToken.column
+    let elsifLine = p.curToken.line
+    let elsifColumn = p.curToken.column
     
-    # Парсим условие elsif
-    if not p.expectPeek(tkLParen):
+    p.nextToken()  # переходим после elsif
+    
+    if p.curToken.kind != tkLParen:
+      p.state.addError(errExpectedLParen, p.curToken.line, p.curToken.column,
+                       found = p.curToken.literal)
       return nil
     
-    p.nextToken()
+    p.nextToken()  # переходим к условию
     let elsifCond = p.parseExpression()
     if elsifCond == nil:
       return nil
     
-    # if not p.expectPeek(tkRParen):
-    #   return nil
-    
-    if not p.expectPeek(tkLBrace):
+    if p.curToken.kind != tkRParen:
+      p.state.addError(errExpectedRParen, p.curToken.line, p.curToken.column,
+                       found = p.curToken.literal)
       return nil
     
-    p.nextToken()
+    p.nextToken()  # переходим после )
     
-    # Парсим тело elsif
+    if p.curToken.kind != tkLBrace:
+      p.state.addError(errExpectedLBrace, p.curToken.line, p.curToken.column,
+                       found = p.curToken.literal)
+      return nil
+    
+    p.nextToken()  # переходим к телу elsif
+    
     var elsifBody: seq[Node] = @[]
     while p.curToken.kind != tkRBrace and p.curToken.kind != tkEOF:
       let stmt = p.parseStatement()
       if stmt != nil:
         elsifBody.add(stmt)
-      p.nextToken()
     
-    echo "After then body, curToken: ", p.curToken.kind
-
     if p.curToken.kind != tkRBrace:
-      p.state.error("Ожидалась '}'", p.curToken.line, p.curToken.column)
+      p.state.addError(errExpectedRBrace, p.curToken.line, p.curToken.column,
+                       found = p.curToken.literal)
       return nil
+    
+    let elsifBodyLine = if elsifBody.len > 0: elsifBody[0].line else: elsifLine
+    let elsifBodyColumn = if elsifBody.len > 0: elsifBody[0].column else: elsifColumn
     
     let elsifBlock = Node(
       kind: nkBlock,
-      line: currentLine,
-      column: currentColumn,
+      line: elsifBodyLine,
+      column: elsifBodyColumn,
       blockStmts: elsifBody
     )
     
-    # Создаем вложенный if для elsif
     elseBlock = Node(
       kind: nkIfStatement,
-      line: currentLine,
-      column: currentColumn,
+      line: elsifLine,
+      column: elsifColumn,
       ifCond: elsifCond,
       ifThen: elsifBlock,
-      ifElse: elseBlock  # предыдущий else становится else для этого elsif
+      ifElse: elseBlock
     )
     
-    p.nextToken()
+    p.nextToken()  # переходим после }
   
   # Обрабатываем else
   if p.curToken.kind == tkElse:
-    if not p.expectPeek(tkLBrace):
+    let elseLine = p.curToken.line
+    let elseColumn = p.curToken.column
+    
+    p.nextToken()  # переходим после else
+    
+    if p.curToken.kind != tkLBrace:
+      p.state.addError(errExpectedLBrace, p.curToken.line, p.curToken.column,
+                       found = p.curToken.literal)
       return nil
     
-    p.nextToken()
+    p.nextToken()  # переходим к телу else
     
-    # Парсим тело else
     var elseBody: seq[Node] = @[]
     while p.curToken.kind != tkRBrace and p.curToken.kind != tkEOF:
       let stmt = p.parseStatement()
       if stmt != nil:
         elseBody.add(stmt)
-      p.nextToken()
     
     if p.curToken.kind != tkRBrace:
-      p.state.error("Ожидалась '}'", p.curToken.line, p.curToken.column)
+      p.state.addError(errExpectedRBrace, p.curToken.line, p.curToken.column,
+                       found = p.curToken.literal)
       return nil
+    
+    let elseBodyLine = if elseBody.len > 0: elseBody[0].line else: elseLine
+    let elseBodyColumn = if elseBody.len > 0: elseBody[0].column else: elseColumn
     
     elseBlock = Node(
       kind: nkBlock,
-      line: p.curToken.line,
-      column: p.curToken.column,
+      line: elseBodyLine,
+      column: elseBodyColumn,
       blockStmts: elseBody
     )
     
-    p.nextToken()  # переходим после else
+    p.nextToken()  # переходим после }
   
-  # Создаем корневой if
   result = Node(
     kind: nkIfStatement,
     line: line,
     column: column,
     ifCond: condition,
     ifThen: thenBlock,
-    ifElse: elseBlock  # если есть elsif/else, иначе nil
+    ifElse: elseBlock
   )
 
-
-
-
-
 proc parseFunctionCall(p: var Parser): Node =
-  ## Парсит вызов функции: name()
   let line = p.curToken.line
   let column = p.curToken.column
   let name = p.curToken.literal
   
-  # Проверяем скобки
-  if not p.expectPeek(tkLParen):
+  p.nextToken()  # переходим после имени
+  
+  if p.curToken.kind != tkLParen:
+    p.state.addError(errExpectedLParen, p.curToken.line, p.curToken.column,
+                     found = p.curToken.literal)
     return nil
   
-  if not p.expectPeek(tkRParen):
+  p.nextToken()  # переходим после (
+  
+  if p.curToken.kind != tkRParen:
+    p.state.addError(errExpectedRParen, p.curToken.line, p.curToken.column,
+                     found = p.curToken.literal)
     return nil
+  
+  p.nextToken()  # переходим после )
+  p.expectSemicolon(line, column)
   
   result = Node(
     kind: nkFunctionCall,
@@ -900,25 +821,17 @@ proc parseFunctionCall(p: var Parser): Node =
     callName: name
   )
 
-
-
-
-
 proc parseReturnStatement(p: var Parser): Node =
-  ## Парсит return выражение: return 0;
   let line = p.curToken.line
   let column = p.curToken.column
   
-  p.nextToken() # Переходим к возвращаемому значению
+  p.nextToken()  # переходим после return
   
-  # Парсим возвращаемое выражение
   let returnValue = p.parseExpression()
   if returnValue == nil:
     return nil
   
-  # Проверяем точку с запятой
-  if not p.expectPeek(tkSemi):
-    return nil
+  p.expectSemicolon(returnValue.line, returnValue.column)
   
   result = Node(
     kind: nkReturn,
@@ -927,68 +840,75 @@ proc parseReturnStatement(p: var Parser): Node =
     returnValue: returnValue
   )
 
-
-
-
-
 proc parseFunctionDecl(p: var Parser): Node =
-  ## Парсит объявление функции: func::name() или func::name(): static
   let line = p.curToken.line
   let column = p.curToken.column
   
-  # Проверяем, что после func идет ::
-  if not p.expectPeek(tkColonColon):
+  p.nextToken()  # переходим после func
+  
+  if p.curToken.kind != tkColonColon:
+    p.state.addError(errUnexpectedToken, p.curToken.line, p.curToken.column,
+                     expected = "'::'", found = p.curToken.literal)
     return nil
   
-  # Имя функции
-  if not p.expectPeek(tkIdent):
+  p.nextToken()  # переходим после ::
+  
+  if p.curToken.kind != tkIdent:
+    p.state.addError(errExpectedIdentifier, p.curToken.line, p.curToken.column,
+                     found = p.curToken.literal)
     return nil
   
   let name = p.curToken.literal
+  p.nextToken()  # переходим после имени
   
-  # Параметры (пока только пустые скобки)
-  if not p.expectPeek(tkLParen):
+  if p.curToken.kind != tkLParen:
+    p.state.addError(errExpectedLParen, p.curToken.line, p.curToken.column,
+                     found = p.curToken.literal)
     return nil
   
-  if not p.expectPeek(tkRParen):
+  p.nextToken()  # переходим после (
+  
+  if p.curToken.kind != tkRParen:
+    p.state.addError(errExpectedRParen, p.curToken.line, p.curToken.column,
+                     found = p.curToken.literal)
     return nil
   
-  # Проверяем, есть ли модификатор static
+  p.nextToken()  # переходим после )
+  
   var funcKind = fkNormal
   
-  if p.peekToken.kind == tkColon:
-    p.nextToken() # Пропускаем :
+  if p.curToken.kind == tkColon:
+    p.nextToken()  # переходим после :
     
-    if p.peekToken.kind == tkStatic:
-      p.nextToken() # Пропускаем static
+    if p.curToken.kind == tkStatic:
       funcKind = fkStatic
+      p.nextToken()  # переходим после static
     else:
-      p.state.error("Ожидался 'static' после ':'", 
-                    p.curToken.line, p.curToken.column)
+      p.state.addError(errUnexpectedToken, p.curToken.line, p.curToken.column,
+                       expected = "'static'", found = p.curToken.literal)
       return nil
   
-  # Тело функции в фигурных скобках
-  if not p.expectPeek(tkLBrace):
+  if p.curToken.kind != tkLBrace:
+    p.state.addError(errExpectedLBrace, p.curToken.line, p.curToken.column,
+                     found = p.curToken.literal)
     return nil
   
-  p.nextToken() # Переходим к первому токену в теле
+  p.nextToken()  # переходим к телу функции
   
   var body: seq[Node] = @[]
   
-  # Парсим тело функции до закрывающей скобки
   while p.curToken.kind != tkRBrace and p.curToken.kind != tkEOF:
-    if p.curToken.kind == tkReturn:
-      let returnNode = parseReturnStatement(p)
-      if returnNode != nil:
-        body.add(returnNode)
-    else:
-      # Парсим другие выражения
-      let stmt = p.parseStatement()
-      if stmt != nil:
-        body.add(stmt)
-    p.nextToken()
+    let stmt = p.parseStatement()
+    if stmt != nil:
+      body.add(stmt)
   
-  # Создаем узел функции
+  if p.curToken.kind != tkRBrace:
+    p.state.addError(errExpectedRBrace, p.curToken.line, p.curToken.column,
+                     found = p.curToken.literal)
+    return nil
+  
+  p.nextToken()  # переходим после }
+  
   result = Node(
     kind: nkFunctionDecl,
     line: line,
@@ -998,24 +918,22 @@ proc parseFunctionDecl(p: var Parser): Node =
     funcBody: body
   )
 
-
-
-
-
 proc parseStatement(p: var Parser): Node =
-  echo "parseStatement: ", p.curToken.kind, " ", p.curToken.literal
+  if p.curToken.kind == tkEOF:
+    return nil
+    
   case p.curToken.kind
   of tkTypeInt, tkTypeFloat, tkTypeBool, tkTypeStr:
     return p.parseVarDecl()
   of tkIdent:
-    # Это может быть присваивание или вызов функции
     if p.peekToken.kind == tkLParen:
       return p.parseFunctionCall()
     elif p.peekToken.kind == tkEq:
       return p.parseAssignment()
     else:
-      p.state.error(&"Нераспознанная конструкция: {p.curToken.literal}", 
-                    p.curToken.line, p.curToken.column)
+      p.state.addError(errUnknownConstruct, p.curToken.line, p.curToken.column,
+                       found = p.curToken.literal)
+      p.nextToken()
       return nil
   of tkSendln:
     return p.parseSendln()
@@ -1028,13 +946,10 @@ proc parseStatement(p: var Parser): Node =
   of tkReturn:
     return p.parseReturnStatement()
   else:
-    p.state.error(&"Недопустимое выражение: {p.curToken.kind}", 
-                  p.curToken.line, p.curToken.column)
+    p.state.addError(errUnsupportedExpression, p.curToken.line, p.curToken.column,
+                     found = p.curToken.literal)
+    p.nextToken()
     return nil
-
-
-
-
 
 proc parseProgram*(p: var Parser): Node =
   let program = Node(kind: nkProgram, line: 1, column: 1)
@@ -1043,6 +958,5 @@ proc parseProgram*(p: var Parser): Node =
     let stmt = p.parseStatement()
     if stmt != nil:
       program.statements.add(stmt)
-    p.nextToken()
   
   return program
