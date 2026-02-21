@@ -1,6 +1,10 @@
 ## Обработка ошибок компилятора
 
-import strformat, strutils
+import strformat, strutils, math
+
+const
+  Gray = "\e[90m"
+  Reset = "\e[0m"
 
 type
   CompileError* = object of CatchableError
@@ -46,17 +50,45 @@ proc prettyError*(state: CompilerState, err: CompileError): string =
     sourceLine = if err.sourceLine.len > 0: err.sourceLine else: state.getSourceLine(line)
     filename = if err.filename.len > 0: err.filename else: state.filename
   
+  # Длина номера строки определяет отступ
+  let lineNumLen = len($line)
+  
+  # База: 4 пробела + длина номера + 1 пробел
+  let indent = " ".repeat(4 + lineNumLen + 1)
+  
   result = &"ERROR. {err.msg}\n"
-  result.add &"    ├> {filename}:{line}:{col}\n"
-  result.add &"    │\n"
+  
+  # Первая линия с │  │ (серым)
+  result.add &"{Gray}{indent}│  │{Reset}\n"
+  
+  # Вторая линия с └── filename:line:column (серым)
+  result.add &"{Gray}{indent}│  └── {filename}:{line}:{col}{Reset}\n"
+  
+  # Пустая линия с │ (серым)
+  result.add &"{Gray}{indent}│{Reset}\n"
   
   if sourceLine.len > 0:
-    result.add &"    └>  {line} | {sourceLine}\n"
-    if col > 0 and col <= sourceLine.len:
-      result.add &"         {' '.repeat(col + len($line) + 2)}^\n"
-      result.add &"         {' '.repeat(col + len($line) + 1)}Here\n"
+    # Строка с номером и кодом (нормальным цветом)
+    result.add &"    {line} │ {sourceLine}\n"
+    
+    # Строка с указателем (серым)
+    result.add &"{Gray}{indent}│{Reset} "
+    
+    # Отступ до позиции ошибки (серым)
+    for i in 0..<col-1:
+      if i < sourceLine.len and sourceLine[i] == ' ':
+        result.add &"{Gray}·{Reset}"
+      else:
+        result.add " "
+    
+    result.add &"{Gray}^{Reset} {err.msg}\n"
   else:
-    result.add &"    └>  {line} | <end of file>\n"
+    # Строка не найдена (файл короче)
+    result.add &"    {line} │\n"
+    result.add &"{Gray}{indent}│{Reset} ^{Gray} {err.msg} (строка {line} отсутствует в файле){Reset}\n"
+  
+  # Пустая строка внизу (серым)
+  result.add &"{Gray}{indent}│{Reset}\n"
 
 proc error*(state: var CompilerState, message: string, line = 0, column = 0) =
   let err = CompileError(
