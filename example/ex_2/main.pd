@@ -12,5 +12,5 @@ if (count == 42) {
 } elsif (x > 42) {
     sendln(count);
 } else {
-    sendln(count)
+    sendln(count);
 }
